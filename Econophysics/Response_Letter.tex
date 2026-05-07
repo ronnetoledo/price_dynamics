@@ -1,0 +1,275 @@
+\documentclass[prd,aps,nofootinbib]{revtex4}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage{latexsym}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage[T1]{fontenc}
+\usepackage[hang,small,up]{caption}
+
+\setcounter{MaxMatrixCols}{10}
+
+\usepackage{color}
+\usepackage[normalem]{ulem}
+\usepackage{cancel}
+
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+\newcommand{\blue}[1]{\textcolor{blue}{#1}}
+
+\begin{document}
+
+\title{Response to the Referee's Comments}
+
+\date{\today }
+\maketitle
+
+% \section{To the Editors}
+\vspace{1cm}
+
+\\
+\\
+
+{\bf Note to the editor} \\
+
+Dear Editor,\\
+
+
+Thank you for the opportunity to respond to reviewers' comments. \\
+\\
+Modifications\\
+\\
+\begin{enumerate}
+    \item We divide the manuscript in sections.
+    \item We add some new references.
+\item We add a new figure, now figure $1$.
+\end{enumerate}
+
+%All changes have been highlighted in red to facilitate the review process.\\
+
+For your convenience, we have reproduced the comments of the referees in bold and provided our responses in red.\\
+
+We believe that these revisions increase the clarity of the manuscript and hope that it is ready for publication.\\
+
+
+Sincerely
+
+Fernando Albuquerque de Oliveira.
+
+\vspace{2cm}
+
+\newpage
+
+\noindent
+
+----------------------------------------------------------------------\\
+Report of the First Referee -- EC12819/Lima\\
+----------------------------------------------------------------------\\
+
+This manuscript reports a study of scaling relations among critical
+exponents in the Ising universality class. The exploration is centered
+around the interpretation of the anomalous dimension exponent $\eta$
+(here called Fisher’s exponent) as the difference $\eta = d - d_R$, Eq.
+$(7)$, between the system dimension d and another dimension $d_R$.
+According to Ref. $[7]$ (by a team that largely overlaps the author
+group of the present manuscript), $d_R$ is the non-integer dimension of
+a fractal set on which the two-point correlation function verifies a
+massless differential equation (using fractional derivatives of the
+Riesz type) at criticality. The goal (and claimed result) of the
+present work seems to be to confirm the validity of Eq. (7), together
+with that of Eq. (8) relating $d_R$ with the fractal dimension $d_f$ of
+the ordered phase at criticality, for non-integer values of d. To this
+end, the authors seemingly compare them with previous results from the
+literature (Table I), providing an approximate interpolation formula
+for $\eta(d)$, Eq. (9); additionally, they justify the validity of
+Rushbrooke$`$s scaling relation for non-integer $d$ too.
+
+The topic of this work seems worth pursuing in the light of the
+previous Ref. [7], and ensuing results may be of interest to the
+readership of this journal.\\
+
+
+\textcolor{red}{ We thank the referee for the positive evaluation of our work and for carefully pointing out errors and typos. We address all the comments below, and we believe that the suggested revisions have greatly improved the manuscript.}\\
+
+
+
+
+Although there is room for improvements in
+the writing (there are many relatively weak connections to additional
+topics whose value to the present work remains imprecise; see below
+for a non-comprehensive list of additional issues), my main concern
+with the present manuscript is the status of the data which are
+supposed to support the main conclusions of the work. Namely, the
+values of the critical exponents $\beta$, $\gamma$, and $\nu$ for the Ising
+universality class in non-integer dimensions that are quoted in Tables
+I and II. According to the authors, they are taken from Ref. [42],
+which unfortunately I have been unable to confirm (please, see the
+comment below). \\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ Indeed, this was a referencing error. The correct citation is: J. C. Le Guillou and J. Zinn-Justin, Journal de Physique 48, 19 (1987), now listed as Ref $[53]$ in the updated version. We have corrected this issue and added additional relevant references.}\\
+\\
+
+
+
+As analytical results are at best approximate in the
+present context, the required sources (for the $"$true$"$  values of the
+Ising exponents in each noninteger dimension) are numerical results,
+perhaps contrasted with analytical estimates, if existing. All this
+needs to be clarified (including suitable references and discussions,
+in particular of the approximations made in the analytical results
+that may be employed) as it critically impacts the validity and
+importance of the results of the present work: It would be very
+different if agreement with Eqs. $(7,8)$ is reached e.g. $"$only$"$ for
+certain analytical approximations, of if it holds for the most
+accurate numerical simulations available in the literature of the
+corresponding noninteger dimensional systems. A careful revision of
+the manuscript is required that addresses these issues. In this
+process, the authors may find some use in the additional comments
+provided below.\\
+\\
+\textcolor{red}{Reply}\\
+%\textcolor{red}{In the discussion of Tables I and II we present a very detailed analysis of the literature data, including new references and the comparison with our results.}\\
+\textcolor{red}{In retrospect, and considering both this referee's comment and similar observations from the other referee, we recognize that the discussions surrounding Eqs. (7) and (8) in the previous version (now Eqs. (9) and (10)) were not sufficiently self-contained, relying too much on our previous work (Ref. [2]). Therefore, we have considerably expanded the ``Introduction'' and ``A Fractal Analysis'' sections, providing a clearer explanation of the underlying ideas and offering more detailed arguments supporting the fractal equation (now Eq. (7)) and how it leads to Eqs. (9) and (10). Additional references have also been included for context and comparison. We believe that part of the referee's concerns (very reasonably) were caused by the referencing error previously discussed. We hope that the expanded discussion and corrected citations adequately address these issues $[10, 53, 87]$.} %Fernando, coloca aqui as referências adicionadas e como elas se relacionam com essa questão da comparação com dados numéricos.
+\\
+
+
+Additional comments (some of them minor):
+
+* The abstract needs some rewriting: $"$we revisit the correlation
+function and demonstrate that applying modern fractional differentials
+to a fractal space of dimension $d_R$ enables us to recover its proper
+form$"$. What does this mean, what is the proper form and of what
+exactly? Please restrict the description more to the specific (Ising)
+model addressed in the manuscript.\\
+\\
+\textcolor{red}{Reply}\\
+%Ismael: Fernando, o "proper form" que ele reclamouy ainda está no abstract, vou dar uma mexida lá e aqui. Veja se você concorda.
+\textcolor{red}{Indeed, the previous wording was vague. We have revised the abstract to clarify that, by employing fractal differentials, we derived an equation for the correlation function that reproduces the correct critical exponents below the upper critical dimension.}\\
+\\
+
+
+* Line 31, $"$empirical correction$"$ I am not sure if $\eta$ was historically introduced empirically, but nowadays it is known to occur on theoretical grounds; $"$empirical$"$is not correct from this point of view.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{Setting aside the semantics of the word "empiric" (which we have removed), the correction was introduced in response to a discrepancy with experimental data, rather than being grounded in a solid conceptual basis. In the revised version of the paper, we have provided a more detailed discussion regarding the introduction of this exponent.}
+%Well, it was an adjustment made by Michael Fisher to explain the correlation function around the fluid coexistence curve. The point is that there was a general acceptance, but no formal deduction for it. We rewrite it }\\
+\\
+
+
+* Lines 64-67: For finite $\rho$, Eq. (2) does not have fluctuations at all orders, if the authors mean by this scale-free correlations at all length scales. Such property only occurs for scales smaller than the correlation length. Please, revise this text.
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ Indeed, we mean as $\rho \rightarrow \infty$. We corrected the text}\\
+\\
+
+
+* Lines 70,71: A fractal Laplacian may be natural, but I do not see why is it $"$required$"$; on what grounds?\\
+\\
+\textcolor{red}{Reply}\\
+\\%Fernando, apesar de estar tudo azul abaixo, eu usei o seu texto em grande parte, apenas fiquei com preguisa de deixar marcado apenas onde eu modifiquei.
+\textcolor{red}{{Since we have a fractal geometry of clusters edge, which is where the fluctuations dominate and the laplacian is nontrivial, the use of a fractal laplacian effectively restricts the derivative to the relevant geometry. As a result, $\eta$ appears naturally in the correlation function, while the equation with an ordinary laplacian is known to lead to wrong exponents below the upper critical dimension. The exponents obtained from this approach are exact for dimensions $d=1,2$ and $4$, and approximated values for other dimensions. Moreover, since the fractal dimensions $d_R$ and $d_f$ can be determined numerically or experimentally, the combination of Eqs. (6), (9), and (10) offers useful additional relations for obtaining critical exponents. To make the text more convincing, we have expanded the discussion on the role of the fractal Laplacian and introduced a new Fig. 1, which illustrates fractal clusters at $T = T_C$ and highlights the presence of scale invariance.}} \\
+\\
+
+
+
+* Line 83,$"$they established$"$, Who? The authors of [7], [35], or [36]?\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ The authors of [7], now [2]. We clarified that.}\\
+\\
+
+
+* Line 108: The exponent $\eta*$ needs to be defined explicitly.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ It is the same exponent $\eta$; the notation $\eta^*$ is used solely to distinguish the value obtained from the literature from the one calculated using our approach ($\eta$). We have clarified this point in the main text and in the caption of Table 1.}\\
+\\
+
+* Tables I and II: For noninteger values of $d$, $\beta$ and $\nu$ are seemingly taken from Ref. [42]. However, I have been unable to confirm this. In particular, this reference is a review of the Potts model (of which here we are only concerned with the q=2 case) and does not seem to cover non-integer dimensions. I really do not know where all these values come from. They do not seem to appear as such in Refs. [37-40] either. Do the authors mean Ref. [41]? There seem to be such estimates of $\beta$ and $\nu$ in this reference, but they are analytical approximations; numerical confirmation of these values seems critically required for the present manuscript.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ Indeed the authors are J. C. Le Guillou and J. Zinn-Justin, now ref $[53]$, we correct it, and we add some comment.}\\
+\\
+* Eq. (13): What is $d_l?$ It has not been defined before. The paragraph
+related to it is hard to understand.\\
+\\
+\textcolor{red}{We apologize. It's a typo, we meant $d_f$. We've corrected the equation, now $(14)$ and subsequent discussions. }\\
+\\
+\textcolor{red}{ We thank again the referee for the thorough review of this manuscript. His criticisms and suggestions have led to significant improvements in the paper.}\\
+\\
+----------------------------------------------------------------------\\
+Report of the Second Referee -- EC12819/Lima\\
+----------------------------------------------------------------------\\
+\\
+In the manuscript, $"$Scaling, Fractal Dynamics and Critical Exponents: Application in a non-integer dimensional Ising model,$"$ the authors explore the fundamental physics and mathematical principles governing phase transitions. Their analysis highlights the intricate relationship among scaling behavior, critical exponents, and fractal geometry. By investigating the correlation function, they demonstrate that applying modern fractional differentials to a fractal space of dimension $d_R$ allows for the recovery of its proper form. This work is a continuation of previous work by the authors. The results may be of interest, but the manuscript is written in a manner that, in my opinion, is inappropriate for Physical Review. \\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ We regret that the referee found the writing in the initial version below the journal standards. We have made extensive revisions throughout the manuscript in the hope that the improved version will now be suitable for publication.}\\
+\\
+I do not recommend the publication of this work. I attach some observations that may help the authors improve their work.
+
+*.- Considering a fractional equation seems more like a mathematical exercise than a physical result if this exponent has no physical meaning. It is possible to measure this exponent.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{The referee's comment suggests that the introduction of the fractional derivative was not sufficiently convincing. This fractional laplacian was originally introduced in our previous work, which led us to present it more succinctly in the current manuscript. However, the referee's feedback indicates that the previous version was not self-contained enough. Therefore, we have expanded the discussion regarding the introduction of the fractional derivative. \\
+We would argue that the change to a fractal derivative goes far beyond a mathematical exercise, it represents a shift in conceptual perspective. While Eq. 2 only works above the upper critical dimension, changin to a fractional laplacian produces an equation that works across for dimensions, including non-integer ones. The combination of Eqs. (9) and (10) provides an additional relation between critical exponents, allowing us to make predictions for the value of $\eta$. These predictions, tested in the present work, show good agreement with previous numerical results. Thus, the introduction of the fractional derivative leads to both correct and useful outcomes.\\
+Regarding the measurability of the exponent $\eta$, Eq. (9) gives a straightforward method to determine it via a box-counting procedure, which can be applied both numerically (as done in our previous work) and experimentally.}%It is a good point, we make a comment about that below Eq. (\ref{dl2}). Indeed, we can make experiments to obtain $d_R$ and $d_f$. No one was done, since it was first presented to the public last December.}\\
+\\
+
+
+*.- I recommend that the authors provide a more appropriate
+introduction for a broader audience in statistical physics; the
+manuscript is very technical and not intended for a wider audience.\\
+\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{In response to this comment and the previous one, we have made extensive revisions to the Abstract, Introduction, and A Fractal Analysis sections. We hope these modifications made the text clearer and more accessible to a broader audience.}\\
+\\
+
+
+*.- The authors only consider correlation functions with spatial fluctuations because the dependence of the order parameter on temporal deviations is ignored. A comment is necessary in this direction.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ We thank the referee for raising this important point regarding temporal fluctuations. Since our work focuses exclusively on equilibrium phase transitions, where spatial correlations dominate critical behavior, temporal dependencies of the order parameter fall beyond our present scope. That said, we have brief discussions on Growth Phenomena and Non-equilibrium Phase Transition, outlining potential extensions to time-dependent phenomena. However, we believe that the generalizations of the ideas presented here to temporal effects deserve a more extensive analysis than we could reasonably include within the scope of the present manuscript.%Since we are generalizing Fisher's ideas for the equilibrium phase transition, we adopt the simplest path. We comment on this in the text. 
+}\\
+\\
+
+*.- The question remains unresolved as to whether the system attains a stationary equilibrium within the confines of the authors' assumptions. One could conceptualize a system in a non-equilibrium state as space-time chaos; in this case, the presented theory appears to be inapplicable. The validity of the presented theory is contingent upon its application to systems in non-equilibrium states.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{We appreciate the referee's insightful remarks regarding the applicability of our assumptions to non-equilibrium systems. Our analysis is explicitly developed for critical phenomena in equilibrium systems, where stationary states are well-defined. We do not expect, and never intended, that our discussion would be straightforwardly applicable to non-equilibrium systems. The extension to non-equilibrium scenarios could require large modifications beyond our current scope. We have a brief discussion at the Concluding Remarks exploring potential extensions to select non-equilibrium systems. However, we emphasize that validating those perspectives is beyond our current objective.%We are Sorry, the first version was not clear. We discuss now the phase transition at equilibrium in Sections I-III. This is our main achievement. In Section IV, with concluding remarks and future perspectives, we speculate about nonequilibrium situations that could benefit from our analysis.
+}\\
+\\
+
+
+*.- The authors should clarify all the hypotheses of equation (2); for
+example, this equation should not be valid in systems without spatial
+reflection.\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{In fact, we are considering here that our medium is infinite and the solution has spherical symmetry.  This was the Ornstein and Zernike proposal [9], the starting point for Fisher work. We include some references and we made some comments before and after Eq. (2).  }\\
+\\
+\\
+*.- The authors do not consider finite-size effects in the theory
+presented. How do these effects change the results obtained?\\
+\\
+\textcolor{red}{Reply}\\
+\textcolor{red}{ In this work, we have not performed any calculations that require consideration of finite-size effects. The error estimates were taken from previous authors. In our previous paper, finite-size effects were considered in the determination of $d_R$. Here, the results are purely analytical; we only use computational simulations for the new Fig. 1, which serves solely to illustrate the clusters formed by spins at the critical point.}\\
+\\
+
+Minor comments:\\
+\\
+*.- There are some incorrect references, for example, [1] B. B. Mandelbrot and B. B. Mandelbrot, The fractal geometry of nature, Vol. 1 (WH Freeman, New York, 1982).\\
+\\
+\textcolor{red}{Corrected!}\\
+\\
+\\
+\textcolor{red}{ We thank the referee for the careful review of this manuscript. We believe that addressing his feedback has led to significant improvements in the paper, and we hope that the revised version is now suitable for publication.}\\
+\\
+
+
+\vspace{1cm}
+
+\noindent
+
+\end{document}

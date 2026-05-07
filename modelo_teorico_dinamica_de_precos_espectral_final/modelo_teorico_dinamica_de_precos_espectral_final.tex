@@ -1,0 +1,1187 @@
+%% LyX 2.3.6.1 created this file.  For more info, see http://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\DeclareTextSymbolDefault{\textquotedbl}{T1}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+\usepackage{amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\makeatother
+
+\begin{document}
+
+\section{Introdução e Motivação}
+
+A motivação central deste trabalho reside no fato de que o preço não
+é uma variável física independente, mas o resultado da interação coletiva
+de agentes (traders, algoritmos, investidores institucionais). 
+
+Existe toda uma fenomenologia baseada em padrões:
+\begin{itemize}
+\item Traders técnicos são treinados para identificar \textquotedbl padrões\textquotedbl{}
+(ombro-cabeça-ombro, suportes, resistências, gaps).
+\item Modelos quantitativos utilizados por investidores instucionais calculam
+\textquotedbl fatores\textquotedbl{} como volatilidade ou momentum
+para estruturar carteiras de investimento.
+\item Algoritmos como HFTs (High Frequency Trading) reagem a pequenas variações
+de preço de forma matemática, buscando explorar ineficiências de curtíssimo
+prazo. 
+\item Volatilidade: a volatilidade dos ativos financeiros é inconstante
+ao longo do tempo. Em períodos de crise ou instabilidade econômica,
+essa volatilidade cresce, ao mesmo tempo em que os preços das ações
+caem. A volatilidade também forma clusters, isto é, períodos de volatilidade
+alta ou baixa tendem a se agrupar, indicando uma persistência temporal.
+\item Mudanças de regime: é comum classificar os mercados como de alta ou
+de baixa (Bull/Bear Market), mercado lateralizado, etc, indicando
+movimentos dominantes.
+\end{itemize}
+Essas observações empíricas mostram que séries de preços financeiros
+exibem simultaneamente aleatoriedade e padrões recorrentes. A presença
+de estruturas estatísticas persistentes sugere que os preços não evoluem
+puramente de forma randômica, mas sim como combinações dinâmicas de
+padrões elementares.
+
+Este trabalho propõe que tais séries são projeções observáveis de
+uma dinâmica estocástica ocorrendo em um espaço de padrões estruturais,
+aqui chamados de \emph{primitivas}. Essas \emph{primitivas} são autovetores
+de um operador integral $K$\cite{Baaquie2004}, que possui uma dinâmica
+própria a qual impacta diretamente na dinâmica dos preços observados.
+As \emph{primitivas} emergem como modos estruturais desse operador,
+e podem ser estimadas empiricamente via PCA (Principal Component Analysis).
+O conjuto de \emph{primitivas} define um \emph{regime} do mercado,
+e este \emph{regime} é definido pela geometria do operador $K$.
+
+\section{Formulação básica}
+
+Considere uma janela temporal finita
+
+\[
+t\in[0,T],
+\]
+onde $t$ é o índice interno da janela. Definimos os retornos $P(t)$
+a partir do preço $S(t)$ do ativo como
+
+\[
+P(t)=\ln\left(\frac{S(t)}{S(t-\Delta t)}\right).
+\]
+A covariância temporal dentro da janela é dada por
+
+\[
+K^{(r)}(t,t')=\langle P(t),P(t')\rangle^{(r)},
+\]
+onde a média é feita sobre uma coleção de janelas onde o regime $r$
+é o mesmo. Esse é um kernel simétrico e definido positivo em $L^{2}([0,T])$. 
+
+O PCA resolve a equação integral
+
+\[
+\int_{0}^{T}K^{(r)}(t,t')\phi_{k}^{(r)}(t')dt'=\lambda_{k}^{(r)}\phi_{k}^{(r)}(t),
+\]
+onde as funções $\phi_{k}^{(r)}(t)$ formam uma base ortonormal em
+$L^{2}([0,T])$
+
+\begin{equation}
+\int_{0}^{T}\phi_{k}^{(r)}(t)\phi_{j}^{(r)}(t)dt=\delta_{kj}.\label{eq:ortonormalidade}
+\end{equation}
+Dentro da janela, os coeficientes não dependem do tempo,de forma que
+podemos escrever $P(t)$ como
+\[
+P(t)=\sum_{k=1}^{m}a_{k}^{(r)}\phi_{k}^{(r)}(t)+\eta^{(r)}(t),
+\]
+onde
+
+\[
+a_{k}^{(r)}=\int_{0}^{T}P(t)\phi_{k}^{(r)}(t),dt
+\]
+são constantes para aquela janela. O resíduo é
+
+\[
+\eta^{(r)}(t)=\sum_{k=m+1}^{\infty}a_{k}^{(r)}\phi_{k}^{(r)}(t).
+\]
+
+Ao passar para a próxima janela, temos duas possibilidades. Se o regime
+permanece o mesmo, o kernel é o mesmo, e terá os mesmos autovalores
+$\lambda_{k}^{(r)}$ e autovetores $\phi_{k}^{(r)}(t)$, mas o novo
+histórico $P(t)$ gera novos coeficientes $a_{k}^{(r)}\longrightarrow\tilde{a}_{k}^{(r)}$.
+Por outro lado, se há uma mudança de regime, $r\to r'$, o kernel
+muda $K^{(r)}(t,t')\longrightarrow K^{(r')}(t,t')$, e mudam as autofunções
+$\phi_{k}^{(r)}(t)$, os autovalores $\lambda_{k}^{(r)}$ e o resíduo
+$\eta^{(r)}(t)$.
+
+Dentro de um regime $r$, o modelo não tem nenhuma dependência temporal
+adicional. O único objeto que realmente carrega a informação do regime
+é o kernel $K^{(r)}(t,t')$, logo a mudança de regime é a mudança
+deste kernel. Enquanto modelos econométricos tradicionais tratam mudanças
+de regime via cadeias de Markov discretas\cite{Hamilton1989}, o presente
+modelo propõe uma transição via dinâmica espectral do operador de
+covariância.
+
+\section{Dinâmica do kernel $K$}
+
+As autofunções satisfazem, para cada $k$,
+
+\begin{equation}
+\int_{0}^{T}K(t,t';\tau)\phi_{k}(t';\tau)dt'=\lambda_{k}(\tau)\phi_{k}(t;\tau),\label{eq:autovalor_K}
+\end{equation}
+onde introduzimos explicitamente $\tau$, o índice da janela, que
+é o tempo lento, não o tempo interno $t\in[0,T]$. É em $\tau$ que
+o regime pode mudar. Suponha agora que o regime varia lentamente,
+ou seja, $K(t,t';\tau)$ é diferenciável em $\tau$. Derivamos (\ref{eq:autovalor_K})
+em relação a $\tau$
+
+\[
+\int_{0}^{T}\frac{\partial K}{\partial\tau}(t,t';\tau)\phi_{k}(t';\tau)dt'+\int_{0}^{T}K(t,t';\tau)\frac{\partial\phi_{k}}{\partial\tau}(t';\tau)dt'=\frac{d\lambda_{k}}{d\tau}\phi_{k}(t;\tau)+\lambda_{k}(\tau)\frac{\partial\phi_{k}}{\partial\tau}(t;\tau),
+\]
+como $\{\phi_{j}\}$ forma uma base ortonormal do espaço $L^{2}$,
+multiplicamos a equação acima por $\phi_{j}(t)$ e integramos em relação
+a $t$ no intervalo $[0,T]$, obtendo
+
+\[
+\begin{aligned}\int_{0}^{T}\phi_{j}(t)\left[\int_{0}^{T}\frac{\partial K}{\partial\tau}(t,t')\phi_{k}(t')dt'\right]dt & +\int_{0}^{T}\phi_{j}(t)\left[\int_{0}^{T}K(t,t')\frac{\partial\phi_{k}}{\partial\tau}(t')dt'\right]dt\\
+ & =\int_{0}^{T}\phi_{j}(t)\left[\frac{\partial\lambda_{k}}{\partial\tau}\phi_{k}(t)+\lambda_{k}\frac{\partial\phi_{k}}{\partial\tau}(t)\right]dt.
+\end{aligned}
+\]
+Como $K$ é autoadjunto, podemos inverter a ordem de integração no
+segundo termo do lado esquerdo desta equação
+
+\[
+\int_{0}^{T}\phi_{j}(t)\int_{0}^{T}K(t,t')\frac{\partial\phi_{k}}{\partial\tau}(t')dt'dt=\int_{0}^{T}\frac{\partial\phi_{k}}{\partial\tau}(t')\left[\int_{0}^{T}K(t',t)\phi_{j}(t)dt\right]dt'
+\]
+Usando a equação espectral (\ref{eq:autovalor_K}), o termo torna-se
+
+\[
+\lambda_{j}\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt.
+\]
+No lado direito, usamos a ortonormalidade na equação (\ref{eq:ortonormalidade}),
+e obtemos para $j\neq k$
+
+\[
+\begin{aligned}\int_{0}^{T}\int_{0}^{T}\phi_{j}(t)\frac{\partial K}{\partial\tau}(t,t')\phi_{k}(t')dt'dt+\lambda_{j}\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt & =\lambda_{k}\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt\\
+\int_{0}^{T}\int_{0}^{T}\phi_{j}(t)\frac{\partial K}{\partial\tau}(t,t')\phi_{k}(t')dt'dt & =(\lambda_{k}-\lambda_{j})\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt
+\end{aligned}
+,
+\]
+que pode ser reescrita como
+\begin{equation}
+\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt=\frac{{\displaystyle \int_{0}^{T}\int_{0}^{T}\phi_{j}(t)\frac{\partial K}{\partial\tau}(t,t')\phi_{k}(t')dtdt'}}{\lambda_{k}-\lambda_{j}}.\label{eq:adiabatica0}
+\end{equation}
+Como $\{\phi_{j}\}$ é uma base completa, qualquer função no espaço,
+incluindo $\frac{\partial\phi_{k}}{\partial\tau}$, pode ser escrita
+como
+
+\[
+\frac{\partial\phi_{k}}{\partial\tau}(t)=\sum_{j}c_{jk}\phi_{j}(t),
+\]
+onde os coeficientes $c_{jk}$ são dados pela projeção
+
+\[
+c_{jk}=\int_{0}^{T}\phi_{j}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt.
+\]
+Para $j=k$, a diferenciação da condição de normalização $\int\phi_{k}^{2}dt=1$
+resulta em
+
+\[
+\frac{\partial}{\partial\tau}\int_{0}^{T}\phi_{k}^{2}(t)dt=2\int_{0}^{T}\phi_{k}(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt=0\implies c_{kk}=0.
+\]
+Multiplicando a equação (\ref{eq:adiabatica0}) por $\phi_{j}$e somando
+para $j\neq k$ na expansão em série, obtemos finalmente
+
+\begin{equation}
+\frac{\partial\phi_{k}}{\partial\tau}(t)=\sum_{j\neq k}\frac{{\displaystyle \int\int\phi_{j}(t_{1})\frac{\partial K}{\partial\tau}(t_{1},t_{2})\phi_{k}(t_{2})dt_{1}dt_{2}}}{\lambda_{k}-\lambda_{j}}\phi_{j}(t),\label{eq:adiabatica}
+\end{equation}
+
+que é a \emph{dinâmica adiabática das bases do PCA} neste contexto.
+Esta equação é análoga à teoria de perturbação adiabática de operadores
+auto-adjuntos \cite{Messiah1961,Kato1995}. Se $K$ muda lentamente,
+as $\phi_{k}$ giram lentamente no espaço $L^{2}$. Se dois autovalores
+se aproximam $\lambda_{k}\approx\lambda_{j}$, a base gira violentamente,
+estes autovetores tornam-se linearmente dependentes, e há uma mudança
+em todo o espectro de autovalores e autovetores, o que representa
+uma mudança de mudança de regime. Observe que esta dinâmica adiabática
+de bases, Eq.(\ref{eq:adiabatica}), só se aplica aos modos fora do
+bulk de MP, pois as bases dentro do bulk são essencialmente ruído.
+
+Suponha agora que $K$ também se movimenta por saltos. Assim em $\tau=\tau_{0}$
+
+\begin{equation}
+K(\tau_{0}^{+})=K(\tau_{0}^{-})+\Delta K.\label{eq:saltos}
+\end{equation}
+Aqui não existe derivada, e a equação (\ref{eq:adiabatica}) não vale.
+O que ocorre é uma rotação instantânea da base. As novas autofunções
+são combinações das antigas
+
+\[
+\phi_{k}^{+}(t)=\sum_{j}M_{kj}\phi_{j}^{-}(t),
+\]
+onde
+
+\[
+M_{kj}=\int_{0}^{T}\phi_{k}^{+}(t)\phi_{j}^{-}(t)dt
+\]
+é uma matriz ortogonal. Isso é uma transição não-adiabática. 
+
+Propomos então um modelo com difusão estocástica lenta
+
+\[
+dK=A[K]d\tau+B[K]dW
+\]
+para modelar a parte adiabática de K. Neste caso temos rotação irregular
+dos autovetores, e variações realistas dentro do regime, com a possibilidade
+de mudanças estruturais através do cruzamento de autovalores. De forma
+geral, a dinâmica de $K$ pode ser modelada como a superposição destas
+contribuições, uma parte lenta com difusão estocástica $\frac{\partial K}{\partial\tau}=A[K]+B[K]dW$
+que gera a equação diferencial (\ref{eq:adiabatica}), e uma parte
+de saltos dada pela equação (\ref{eq:saltos}). A forma mais geral
+é então um processo de Itô com saltos no espaço de kernels
+\begin{equation}
+dK=A[K]d\tau+B[K]dW_{\tau}+\Delta KdN_{\tau},\label{eq:ito}
+\end{equation}
+onde $A[K]$ é um termo de drift determinístico, $B[K]$ é a intensidade
+do ruído, $dW$ é um processo de Wiener, e $dN$ é um processo de
+Poisson, relacionado a mudanças violentas de regime em grandes crises,
+como a do vírus COVID.
+
+\section{Dinâmica dos coeficientes $a_{k}$}
+
+Dentro da janela
+
+\[
+P(t)=\sum_{k}a_{k}(\tau)\phi_{k}(t;\tau),
+\]
+com
+
+\begin{equation}
+a_{k}(\tau)=\int_{0}^{T}P(t)\phi_{k}(t;\tau)dt.\label{eq:aktempo}
+\end{equation}
+Como $a_{k}$ muda quando a base gira , derivamos (\ref{eq:aktempo})
+em relação a $\tau$
+
+\[
+\frac{da_{k}}{d\tau}=\int_{0}^{T}P(t)\frac{\partial\phi_{k}}{\partial\tau}(t)dt,
+\]
+substituindo (\ref{eq:adiabatica}) obtemos
+
+\[
+\frac{da_{k}}{d\tau}=\sum_{j\neq k}\frac{{\displaystyle \int\int\phi_{j}(t_{1})\frac{\partial K}{\partial\tau}(t_{1},t_{2})\phi_{k}(t_{2})dt_{1}dt_{2}}}{\lambda_{k}-\lambda_{j}}\underbrace{\int_{0}^{T}P(t)\phi_{j}(t)dt}_{a_{j}}.
+\]
+Logo,
+\[
+\frac{da_{k}}{d\tau}=\sum_{j\neq k}\Omega_{kj}(\tau)a_{j}(\tau),
+\]
+onde
+\[
+\Omega_{kj}(\tau)=\frac{{\displaystyle \int_{0}^{T}\int_{0}^{T}\phi_{j}(t_{1})\frac{\partial K}{\partial\tau}(t_{1},t_{2})\phi_{k}(t_{2})dt_{1}dt_{2}}}{\lambda_{k}-\lambda_{j}},
+\]
+ou seja, os coeficientes não são independentes, eles obedecem um sistema
+acoplado. Quando o kernel gira, a energia de um modo passa para outros,
+o que se reflete em um aumento do resíduo e a perda de estabilidade
+do PCA antes da mudança de regime. Por outro lado, quando ocorre um
+salto $dN_{\tau}=1$,
+
+\[
+K^{+}=K^{-}+\Delta K,
+\]
+as autofunções mudam
+
+\[
+\phi_{k}^{+}=\sum_{j}M_{kj}\phi_{j}^{-},
+\]
+e os coeficientes sofrem rotação instantânea
+\[
+a_{k}^{+}=\sum_{j}M_{kj}a_{j}^{-}.
+\]
+
+
+\section{Ruído dos resíduos}
+
+O ruído $\eta$ não é arbitrário, ele é o ruído previsto pela teoria
+de matrizes aleatórias (RMT) para o kernel temporal. Da decomposição
+espectral completa do kernel em um regime $r$,
+
+\[
+K(t,t')=\sum_{k=1}^{\infty}\lambda_{k}\phi_{k}(t)\phi_{k}(t')
+\]
+
+separamos os modos estruturais $\lambda_{k}>\lambda^{+}$e os modos
+de ruído (bulk) $\lambda_{k}\le\lambda^{+}$, onde 
+\[
+\lambda^{+}=\sigma^{2}(1+\sqrt{q})^{2}
+\]
+é o limite superior de Marchenko--Pastur (MP) \cite{Laloux1999,Plerou1999},
+com $q=L/N$ (tamanho da janela / número de amostras). A separação
+entre componentes informativos e o ruído universal de matrizes aleatórias
+é validada empiricamente para grandes conjuntos de ativos\cite{Plerou2002}.
+A reconstrução truncada usa $m$ modos informativos
+
+\[
+P(t)=\sum_{k=1}^{m}a_{k}\phi_{k}(t)+\eta(t),
+\]
+com
+\[
+\eta(t)=\sum_{k>m}a_{k}\phi_{k}(t).
+\]
+Como a base diagonaliza a covariância,
+
+\[
+\langle a_{k},a_{j}\rangle=\lambda_{k}\delta_{kj}
+\]
+Para $k>m$, temos
+
+\[
+\lambda_{k}\in\text{espectro MP}.
+\]
+De acordo com MP, esses autovalores são aqueles de uma matriz de covariância
+de ruído branco finito-amostral, ou seja,
+
+\[
+a_{k}\sim\mathcal{N}(0,\lambda_{k})\quad\text{independentes}.
+\]
+
+Agora calculamos a correlação do bulk
+
+\begin{equation}
+\langle\eta(t),\eta(t')\rangle=\sum_{k>m}\lambda_{k}\phi_{k}(t)\phi_{k}(t'),\label{eq:correruido0}
+\end{equation}
+que é a parte do kernel associada ao ruído
+\[
+K_{\text{ruído}}(t,t')=\sum_{\lambda_{k}\le\lambda_{+}}\lambda_{k}\phi_{k}(t)\phi_{k}(t').
+\]
+Segundo MP, para ruído branco de variância $\sigma^{2}$, o espectro
+da covariância empírica ocupa o intervalo
+
+\[
+\lambda\in\left[\sigma^{2}(1-\sqrt{q})^{2},\sigma^{2}(1+\sqrt{q})^{2}\right],
+\]
+logo, os modos da cauda são modos que não carregam estrutura temporal
+real, são artefatos estatísticos. Da eq. (\ref{eq:correruido0}) temos
+a variância pontual do bulk
+
+\[
+\langle\eta(t)^{2}\rangle=\sum_{k>m}\lambda_{k}\phi_{k}(t)^{2}
+\]
+e a sua correlação temporal
+
+\[
+\langle\eta(t),\eta(t')\rangle=K_{\text{ruído}}(t,t'),
+\]
+mas como os autovetores$\phi_{k}$ da cauda são essencialmente aleatórios
+\cite{CouilletDebbah2011,Paul2007} e não correlacionados, essa soma
+converge para
+\[
+\langle\eta(t),\eta(t')\rangle\approx\sigma_{\eta}^{2}\delta(t-t'),
+\]
+ou seja, o resíduo é aproximadamente ruído branco temporal dentro
+da janela. Note que apesar de termos um ruído residual branco, isso
+não significa que os retornos sejam não correlacionados, uma parte
+da correlação é devida aos modos fora do bulk, o que pode resultar
+em correlações de longo alcance (cauda longa) \cite{Mantegna1999}.
+Para obtermos a variância total do resíduo $\sigma_{\eta}^{2}$, integramos
+$\langle\eta(t)^{2}\rangle$sobre o domínio temporal $T$ e usamos
+a normalização das autofunções 
+\[
+\begin{aligned}\sigma_{\eta}^{2} & =\int_{0}^{T}\langle\eta(t)^{2}\rangle dt\\
+ & =\int_{0}^{T}\sum_{k>m}\lambda_{k}\phi_{k}(t)^{2}dt\\
+ & =\sum_{k>m}\lambda_{k}\int_{0}^{T}\phi_{k}(t)^{2}dt
+\end{aligned}
+,
+\]
+e como $\int\phi_{k}(t)^{2}dt=1$, obtemos o resultado final para
+a variância acumulada do ruído
+
+\[
+\sigma_{\eta}^{2}=\sum_{k>m}\lambda_{k}.
+\]
+Esta variância aumenta quando os autovalores informativos cruzam o
+limiar de MP dado por $\lambda^{+}$, o que sinaliza uma mudança de
+regime.
+
+\section{Mudanças de regime e transições de fase}
+
+Enquanto os autovalores são bem separados,$\lambda_{k}\gg\lambda_{j}$,
+e a equação que obtivemos
+
+\[
+\frac{\partial\phi_{k}}{\partial\tau}\propto\frac{1}{\lambda_{k}-\lambda_{j}}
+\]
+implica que a base é rígida e cada $\phi_{k}$ tem identidade própria,
+ou seja, o PCA é estável. Isso é o que se observa dentro de um regime.
+Por outro lado quando $\lambda_{k}\to\lambda_{j}$, o denominador
+vai a zero, ou seja, a derivada de $\phi_{k}$ tende ao infinito$\frac{\partial\phi_{k}}{\partial\tau}\to\infty$.
+Com isto as autofunções deixam de ter identidade individual e passam
+a poder se misturar arbitrariamente dentro do subespaço gerado por
+elas. Matematicamente, quando há degenerescência espectral, os autovetores
+não são mais únicos, só o subespaço é bem definido. Antes de uma mudança
+de regime os primeiros modos começam a “trocar de forma”, ficam instáveis,
+a reconstrução piora e o resíduo cresce. Não é somennte uma mudança
+em um autovetor. A estrutura espectral inteira muda, porque quando
+dois modos se tornam quase degenerados, o subespaço relevante muda
+de orientação, os coeficientes $a_{k}$ passam a trocar energia fortemente
+e a separação entre modo 1, modo 2, etc, deixa de fazer sentido, o
+que força uma reorganização global da base.
+
+Em teoria espectral e física estatística, uma transição de fase ocorre
+quando uma pequena variação de um parâmetro produz mudança não suave
+na estrutura espectral do operador. Aqui o parâmetro é $\tau$ (tempo
+das janelas), e a não-suavidade ocorre quando$\lambda_{k}-\lambda_{j}\to0,$ou
+seja, o mercado passa por transições de fase espectrais do operador
+de covariância temporal, onde os modos deixam de ser bem definidos,
+o ruído aumenta, a base inteira se reorganiza e surge um novo conjunto
+estável depois. O parâmetro de ordem desta transição é 
+\[
+\Delta(\tau)=min_{k\neq j}|\lambda_{k}-\lambda_{j}|,
+\]
+ou seja, quando $\Delta\rightarrow0$ temos a transição. Da mesma
+forma que antes, observe que essa transição de fase só faz sentido
+para os modos fora do bulk de MP. Esse processo de degenerescência
+também pode fazer com que um dos autovalores estruturais cruze o limite
+de MP, resultado de uma perda de estrutura real do mercado, ou seja,
+a dinâmica se aproxima da dinâmica desestruturada do bulk, que é um
+ruído branco. Por outro lado, pode haver o movimento inverso, quando
+há estruturação do mercado, um dos autovalores que estavam no bulk
+pode cruzar o limiar de MP. Assim, temos dois mecanismos principais
+de mudança de regime, um onde a base gira violentamente e se reorganiza,
+mantendo o número de autovalores estruturais, e outra onde há mudança
+na quantidade de autovalores fora do bulk, que representa mudanças
+na quantidade de informação disponível. 
+
+\section{Teorma da Persistência Estrutural}
+
+Nesta seção estabelecemos formalmente que os autovetores do operador
+de covariância empírico associados a autovalores fora do bulk de Marchenko--Pastur
+são estatisticamente consistentes e convergem para os modos próprios
+do processo gerador subjacente. Esta propriedade justifica rigorosamente
+a interpretação de que as primitivas temporais observadas via PCA
+móvel correspondem a estruturas dinâmicas reais do mercado, e não
+a artefatos de amostragem finita.
+
+Considere que, dentro de um regime, os retornos normalizados possam
+ser representados por
+
+\begin{equation}
+P(t)=\sum_{k=1}^{m}a_{k}\,\psi_{k}(t)+\epsilon(t),
+\end{equation}
+onde $\psi_{k}(t)\in L^{2}([0,T])$ são funções determinísticas representando
+componentes estruturais de baixa dimensão, $a_{k}$ são variáveis
+aleatórias com variância finita e $\epsilon(t)$ é ruído branco temporal
+com variância $\sigma^{2}$. O operador de covariância real do processo
+é então
+
+\begin{equation}
+K_{\text{real}}(t,t')=\sum_{k=1}^{m}\mathbb{E}[a_{k}^{2}]\,\psi_{k}(t)\psi_{k}(t')+\sigma^{2}\delta(t-t').
+\end{equation}
+Esse operador é a soma de um operador de posto finito com um operador
+identidade escalado pelo ruído branco, possuindo portanto autovalores
+isolados associados às funções $\psi_{k}$. Na prática, estimamos
+a covariância a partir de $N$ janelas pertencentes ao mesmo regime
+
+\begin{equation}
+K_{\text{emp}}(t,t')=\frac{1}{N}\sum_{i=1}^{N}P_{i}(t)P_{i}(t').
+\end{equation}
+
+Resultados clássicos de estatística funcional garantem que, quando
+$N\to\infty$, $\|K_{\text{emp}}-K_{\text{real}}\|_{\mathrm{HS}}\to0,$onde
+$\|\cdot\|_{\mathrm{HS}}$ é a norma de Hilbert--Schmidt \cite{Bosq2000}.
+O operador $K_{\text{real}}$ possui $m$ autovalores destacados acima
+do contínuo associado ao ruído branco. A teoria de matrizes aleatórias
+para modelos spiked mostra que, quando existe ruído de alta dimensão
+com razão dimensional fixa $q=T/N$, os autovalores empíricos associados
+às componentes estruturais se separam do bulk de Marchenko--Pastur
+sempre que os autovalores reais excedem um limiar crítico \cite{Johnstone2001,Baik2005}.
+Além disso, os autovetores empíricos correspondentes apresentam sobreposição
+finita com os modos reais, isto é, $|\langle\phi_{k}^{(\text{emp})},\psi_{k}\rangle|^{2}\to c_{k}>0.$
+Como $K_{\text{emp}}\to K_{\text{real}}$ e os autovalores estruturais
+são isolados, podemos aplicar a teoria de perturbação espectral para
+operadores auto-adjuntos compactos \cite{Kato1995,DavisKahan1970}.
+Isso implica que os autovetores empíricos convergem em norma para
+os autovetores reais, ouu seja, $\|\phi_{k}^{(\text{emp})}-\psi_{k}\|\to0.$
+Assim, podemos enunciar o \textbf{teorema da persistência estrutural:} 
+
+\emph{Sob o modelo acima, o operador de covariância empírico converge
+para o operador real em norma de Hilbert--Schmidt. Os autovalores
+isolados de $K_{\text{real}}$ geram autovalores empíricos que se
+separam do bulk de Marchenko--Pastur, e os autovetores correspondentes
+convergem para os modos estruturais $\psi_{k}$ quando $N,T\to\infty$
+com razão dimensional fixa.}
+
+Esse resultado garante que as primitivas temporais identificadas via
+PCA não são artefatos estatísticos, mas correspondem a graus de liberdade
+dinâmicos reais do processo gerador do mercado. 
+
+\section{Dinâmica Estocástica do Operador $K$ e Emergência do Bulk Espectral}
+
+Assumimos que o operador estrutural $K(\tau)$ evolui segundo uma
+dinâmica de Itô no tempo lento $\tau$ \cite{ito1944,dynkin1965}
+
+\begin{equation}
+dK=A(K,\tau)\,d\tau+d\eta,
+\end{equation}
+onde $A$ é um operador determinístico (não necessariamente linear)
+e $d\eta$ é um incremento estocástico com
+
+\begin{equation}
+\mathbb{E}[d\eta]=0,\qquad\mathbb{E}[d\eta^{ab}d\eta^{cd}]=B^{ab,cd}\,d\tau.
+\end{equation}
+Note que não assumimos nenhuma forma específica para $A$ ou para
+$B$, apenas que os momentos de segunda ordem existam. A solução integral
+da equação acima pode ser escrita formalmente como
+
+\begin{equation}
+K(\tau)=\Phi(\tau,0)K(0)+\int_{0}^{\tau}\Phi(\tau,s)\,d\eta(s),
+\end{equation}
+onde $\Phi(\tau,s)$ é o propagador determinístico associado à parte
+$A$. Logo, toda a aleatoriedade de $K$ provém do termo integral
+estocástico. Sejam $(\lambda_{k}(\tau),\phi_{k}(\tau))$ os autovalores
+e autovetores instantâneos de $K$
+
+\begin{equation}
+K(\tau)\phi_{k}(\tau)=\lambda_{k}(\tau)\phi_{k}(\tau),
+\end{equation}
+Aplicando cálculo de Itô matricial e teoria de perturbação estocástica
+de autovalores \cite{dyson1962,anderson2010}, obtemos
+
+\begin{align}
+d\lambda_{k} & =\langle\phi_{k},dK\,\phi_{k}\rangle+\sum_{j\neq k}\frac{|\langle\phi_{j},dK\,\phi_{k}\rangle|^{2}}{\lambda_{k}-\lambda_{j}},\\
+d\phi_{k} & =\sum_{j\neq k}\frac{\langle\phi_{j},dK\,\phi_{k}\rangle}{\lambda_{k}-\lambda_{j}}\phi_{j}.
+\end{align}
+Assim, o termo determinístico afeta suavemente o espectro e o termo
+estocástico introduz mistura espectral. Projetando o ruído nos autovetores
+de $K$
+
+\begin{equation}
+\Xi_{jk}=\langle\phi_{j},d\eta\phi_{k}\rangle,
+\end{equation}
+a variância do incremento dos autovetores é
+
+\begin{equation}
+\mathbb{E}\big[\|d\phi_{k}\|^{2}\big]=\sum_{j\neq k}\frac{\mathbb{E}|\Xi_{jk}|^{2}}{(\lambda_{k}-\lambda_{j})^{2}}.
+\end{equation}
+Esta equação conecta a variância nos incrementos dos autovetores de
+$K$com a variância na projeção de $d\eta$, mostrando que as propriedades
+do bulk não são indepentes, mas emergem da propagação das flutuações
+de Itô do operador estrutural $K$ amplificadas pela quase degenerescência
+espectral. Quando $|\lambda_{k}-\lambda_{j}|$ é pequeno, o denominador
+amplifica o ruído, fenômeno intimamente relacionado à repulsão espectral
+descrita na teoria de matrizes aleatórias \cite{mehta2004} Subespaços
+onde os autovalores são quase degenerados tornam-se altamente sensíveis
+às flutuações. Esse regime define o \emph{bulk espectral}. No subespaço
+quase degenerado, a mistura estocástica torna-se dominante, os autovetores
+passam a sofrer uma rotação browniana efetiva, tornando-se estatisticamente
+isotrópicos \cite{bourgade2013}. Consequentemente, as projeções dos
+retornos nesse subespaço tornam-se gaussianas por efeito central:
+
+\begin{equation}
+a_{k}=\langle r,\phi_{k}\rangle\quad\Longrightarrow\quad a_{k}\sim\mathcal{N}(0,\sigma_{b}^{2}).
+\end{equation}
+
+Sob as hipóteses de mistura estocástica forte no subespaço degenerado,
+consistentes com o princípio de universalidade espectral \cite{tao2012},
+ausência de estrutura privilegiada residual, e limite de grande dimensão,
+a densidade espectral do bulk converge para o formato de Marchenko--Pastur
+\cite{marchenko1967,baik2016}:
+
+\begin{equation}
+\rho_{MP}(\lambda)=\frac{1}{2\pi q\sigma_{b}^{2}\lambda}\sqrt{(\lambda_{+}-\lambda)(\lambda-\lambda_{-})},
+\end{equation}
+
+com $\lambda_{\pm}=\sigma_{b}^{2}(1\pm\sqrt{q})^{2}.$
+
+\section{Processos de Itô em Espaço de Matrizes e o Teorema de Flutuação--Dissipação
+na Métrica de Frobenius}
+
+\subsection{Dinâmica Estocástica Matricial}
+
+Considere um processo estocástico matricial 
+\[
+K(t)\in\mathbb{R}^{n\times n},
+\]
+cuja dinâmica é descrita por uma equação diferencial estocástica de
+Itô da forma 
+\begin{equation}
+dK=A(K)\,dt+B(K)\,dW,\label{eq:Ito_matrix}
+\end{equation}
+onde $A(K)$ é o termo determinístico (drift), $B(K)$ é o operador
+de acoplamento do ruído, $dW$ é um processo de Wiener matricial com
+\[
+\mathbb{E}[dW]=0,\qquad\mathbb{E}[dW\,dW^{\top}]=Q\,dt,
+\]
+
+onde $Q$ é uma matriz simétrica positiva definida. O espaço $\mathbb{R}^{n\times n}$
+é um espaço vetorial real de dimensão $n^{2}$. Seu produto interno
+natural é o produto de Frobenius, dado por 
+\begin{equation}
+A:B\;=\;\mathrm{Tr}(A^{\top}B)\;=\;\sum_{i,j}A_{ij}B_{ij}.\label{eq:frobenius}
+\end{equation}
+A norma induzida é a norma de Frobenius 
+\[
+\|A\|_{F}^{2}=A:A.
+\]
+Este produto interno é o análogo matricial do produto escalar Euclidiano.
+Definimos o funcional escalar 
+\begin{equation}
+E(K)=K:K=\mathrm{Tr}(K^{\top}K),\label{eq:energy}
+\end{equation}
+que mede o equivalente a \emph{energia quadrática} total do sistema
+no espaço das matrizes. Aplicando a regra de Itô ao funcional $E(K)$
+usando o produto interno de Frobenius, obtemos
+
+\[
+dE=d(K:K),
+\]
+onde
+
+\[
+d(K:K)=(dK):K+K:(dK)+(dK):(dK).
+\]
+Como o produto é simétrico:
+
+\[
+(dK):K=K:(dK),
+\]
+obtemos:
+
+\begin{equation}
+dE=2K:dK+dK:dK,\label{eq:Ito_energy}
+\end{equation}
+que é a forma matricial da regra de Itô para a energia quadrática.
+Substituindo a dinâmica \eqref{eq:Ito_matrix} em \eqref{eq:Ito_energy},
+obtemos
+
+\[
+dE=2K:(A\,dt+B\,dW)+(A\,dt+B\,dW):(A\,dt+B\,dW).
+\]
+Pelas regras de Itô, eliminamos os termos com
+
+\[
+dt^{2}=0,\quad dt\,dW=0,\quad dW\,dt=0,
+\]
+ou seja, 
+
+\[
+dE=2K:A\,dt+2K:B\,dW+(B\,dW):(B\,dW).
+\]
+Tomando média $\mathbb{E}[]$ de $dE$, observamos que
+
+\[
+\mathbb{E}[K:B\,dW]=0,
+\]
+logo
+
+\begin{equation}
+\frac{d}{dt}\mathbb{E}[E]=2\mathbb{E}[K:A]+\mathbb{E}[BQB^{\top}:I].\label{eq:energy_balance}
+\end{equation}
+Que é o balanço de enerrgia para este processo. O termo $2\mathbb{E}[K:A]$
+dissipa energia, enquanto $\mathbb{E}[BQB^{\top}:I]$ injeta energia
+no sistema. No regime estacionário:
+
+\[
+\frac{d}{dt}\mathbb{E}[E]=0,
+\]
+logo
+
+\begin{equation}
+2\mathbb{E}[K:A]=-\mathbb{E}[BQB^{\top}:I].\label{eq:FDT_scalar}
+\end{equation}
+que é a forma escalar do teorema de flutuação--dissipação (TFD) na
+métrica de Frobenius. Em sistemas reais pode ocorrer uma quase estacionariedade,
+
+\[
+\langle dE\rangle_{W}\approx0
+\]
+apenas em janelas temporais finitas $W$. Neste caso temos equilíbrio
+local, mas possível deriva lenta global. A razão
+
+\[
+R=-\frac{\langle2K:dK\rangle_{W}}{\langle dK:dK\rangle_{W}}
+\]
+quantifica o desvio do equilíbrio.
+
+\subsection{Distribuição dos Tempos Entre Mudanças de Regime}
+
+Definimos uma mudança de regime espectral como o instante em que um
+autovalor estrutural $\lambda_{k}(\tau)$ cruza o limite superior
+do bulk de Marchenko--Pastur $\lambda_{+}$, isto é, $\lambda_{k}(\tau)=\lambda_{+}(\tau)$.
+Buscamos aqui determinar a forma assintótica da distribuição de tempos
+$g(\tau^{*})$, e sua conexão com a dinâmica de $K$, onde $\tau^{*}$é
+o intervalo de tempo entre mudanças de regime. Considere a dinâmica
+matricial geral 
+\[
+dK=A(K,\tau)\,d\tau+B(K,\tau)\,dW,
+\]
+onde $A$ e $B$ são operadores suficientemente regulares e $dW$
+é um processo de Wiener matricial com momentos de segunda ordem finitos.
+Aplicando cálculo de Itô para autovalores de operadores auto-adjuntos
+\cite{dyson1962,anderson2010}, obtemos 
+\begin{equation}
+d\lambda_{k}=\langle\phi_{k},dK\phi_{k}\rangle+\sum_{j\neq k}\frac{|\langle\phi_{j},dK\phi_{k}\rangle|^{2}}{\lambda_{k}-\lambda_{j}}.\label{eq:lambda_ito}
+\end{equation}
+Definimos a variável 
+\[
+X(\tau)=\lambda_{k}(\tau)-\lambda_{+}(\tau),
+\]
+que é a distância entre um autovalor e o limiar do bulk. Com essa
+definição, uma mudança de regime ocorre quando $X(\tau)=0$. Próximo
+à borda do bulk, os autovalores satisfazem propriedades universais
+da teoria de matrizes aleatórias \cite{mehta2004,tao2012}. Em particular,
+o espaçamento espectral próximo à borda escala como $n^{-2/3}$. Já
+a repulsão espectral implica que termos do tipo $(\lambda_{k}-\lambda_{j})^{-1}$
+permanecem dominantes. Da Eq.~(\ref{eq:lambda_ito}), o termo singular
+\[
+\sum_{j\neq k}\frac{|\langle\phi_{j},dK\phi_{k}\rangle|^{2}}{\lambda_{k}-\lambda_{j}}
+\]
+gera amplificação estocástica quando $\lambda_{k}\to\lambda_{+}$.
+No entanto, independentemente da forma específica de $A$ e $B$,
+a dinâmica efetiva de $X(\tau)$ pode ser escrita localmente como
+um processo de difusão unidimensional: 
+\begin{equation}
+dX=\mu(X,\tau)\,d\tau+\sigma(X,\tau)\,dW_{\tau},\label{eq:general_diffusion}
+\end{equation}
+onde $\mu(X,\tau)$ é um drift regular em $X$ e $\sigma(X,\tau)$
+é contínua e estritamente positiva. A regularidade deste processo
+segue da suavidade de $A$ e dos momentos finitos do ruído matricial.
+Próximo ao cruzamento, temos $X\to0$, e pela continuidade de $\mu$,
+existe expansão local tal que
+\[
+\mu(X,\tau)=a(\tau)X+o(X).
+\]
+Logo, no limite $X\to0$, o drift é de ordem linear enquanto a difusão
+permanece finita $\sigma(0,\tau)>0$. Esse regime corresponde a um
+ponto quase crítico, caracterizado por drift fraco, difusão dominante
+e ausência de escala característica. Se $\tau^{*}$ é o tempo de primeira
+passagem de $X(\tau)$ até zero, partindo de $X(0)>0$, para processos
+de difusão unidimensionais da forma (\ref{eq:general_diffusion}),
+resultados clássicos de teoria de processos estocásticos \cite{redner2001,majumdar1999}
+mostram que, quando o drift é regular e a difusão é dominante próximo
+ao ponto crítico, a distribuição assintótica do tempo de primeira
+passagem satisfaz 
+\begin{equation}
+g(\tau^{*})\sim\tau^{*-2}.\label{eq:powerlaw}
+\end{equation}
+Esse resultado é universal e independe da forma detalhada de $\mu$
+e $\sigma$, desde que $\mu(X)$ seja $O(X)$ quando $X\to0$, $\sigma(0)\neq0$,
+e o processo $dX$ seja Markoviano. A degenerescência espectral $\lambda_{k}\to\lambda_{+}$
+atua como ponto crítico dinâmico, quando o gap espectral 
+\[
+\Delta(\tau)=\min_{i\neq j}|\lambda_{i}-\lambda_{j}|
+\]
+se aproxima de zero, ocorre amplificação estocástica via termos $(\lambda_{k}-\lambda_{j})^{-1}$,
+redução efetiva do drift restaurador e critical slowing down. Consequentemente,
+as mudanças de regime não possuem escala temporal característica,
+e a distribuição dos intervalos entre eventos obedece à lei de potência
+(\ref{eq:powerlaw}). Esta lei assintótica emerge como consequência
+universal da dinâmica estocástica dos autovalores próxima à borda
+de Marchenko--Pastur, independentemente de hipóteses específicas
+sobre a forma do drift $A(K)$ ou da estrutura do ruído $B(K)$. Mudanças
+de regime espectrais são, portanto, fenômenos críticos associados
+à degenerescência do operador de covariância temporal.
+
+\section{Conexão com o modelo de Black and Schoules}
+
+Nesta seção conectamos, de forma rigorosa, a decomposição espectral
+proposta para os incrementos logarítmicos com o modelo de Black--Scholes.
+O ponto central é que, no limite contínuo, a volatilidade que entra
+na equação de precificação não é um parâmetro livre, mas uma quantidade
+espectral determinada pelos autovalores do bulk de Marchenko--Pastur
+do operador de covariância dos incrementos.
+
+\subsection{O objeto espectral no limite contínuo}
+
+No caso discreto, trabalhamos com
+
+\[
+P(t;\Delta t)=\ln\left(\frac{S(t)}{S(t-\Delta t)}\right),
+\]
+e a matriz de covariância construída é
+
+\[
+C_{tt'}=\langle P(t)P(t')\rangle.
+\]
+Quando $\Delta t\to0$,
+
+\[
+P(t;\Delta t)=\int_{t-\Delta t}^{t}d(\ln S)\longrightarrow d(\ln S_{t}).
+\]
+Logo, o operador contínuo correspondente é
+
+\[
+C(t,t')=\left\langle d(\ln S_{t})d(\ln S_{t'})\right\rangle ,
+\]
+isto é, a covariância dos incrementos do log-preço. Nesse limite,
+os autovetores discretos $\phi_{k}(t)$ passam a representar padrões
+de incrementos, que denotaremos por $d\phi_{k}(t)$. A expansão espectral
+contínua assume, então, a forma
+
+\begin{equation}
+d(\ln S)=\sum_{k\le m}a_{k}d\phi_{k}(t)+\sigma dW_{t},\label{eq:expansao_incrementos}
+\end{equation}
+onde os modos $k\le m$ correspondem aos autovalores fora do bulk
+MP, o termo $dW_{t}$ representa a contribuição combinada dos modos
+do bulk.
+
+\subsection{Identificação de $\mu$ e $\sigma$}
+
+Tomando a esperança em (\ref{eq:expansao_incrementos}),
+
+\[
+\mathbb{E}[d(\ln S)]=\sum_{k\le m}a_{k}\mathbb{E}[d\phi_{k}].
+\]
+Como $\phi_{k}$ são processos suaves no tempo físico,
+
+\[
+\mathbb{E}[d\phi_{k}]=\frac{d\phi_{k}}{dt}dt.
+\]
+ Logo,
+
+\begin{equation}
+\mu=\sum_{k\le m}a_{k}\frac{d\phi_{k}}{dt}.\label{eq:mu}
+\end{equation}
+Por outro lado, a variância do termo ruidoso é determinada pelos autovalores
+do bulk \cite{BunBouchaudPotters2017}
+
+\begin{equation}
+\sigma^{2}=\sum_{k>m}\lambda_{k}.\label{eq:sigma}
+\end{equation}
+Esta volatilidade pode ser interpretada como resultado da contribuição
+de múltiplos modos rápidos não resolvidos\cite{Fouque2000}. Substituindo
+em $d(\ln S)=\frac{dS}{S}$, obtemos a equação diferencial efetiva
+
+\[
+\frac{dS}{S}=\mu dt+\sigma dW_{t},
+\]
+que é exatamente a dinâmica assumida no modelo de Black--Scholes.
+
+\subsection{Dependência espectral da volatilidade e das sensibilidades}
+
+A equação de precificação de Black--Scholes,
+
+\[
+\frac{\partial C}{\partial t}+\frac{1}{2}\sigma^{2}S^{2}\frac{\partial^{2}C}{\partial S^{2}}+rS\frac{\partial C}{\partial S}-rC=0,
+\]
+depende da volatilidade apenas através de$\sigma^{2}$. Pela relação
+(\ref{eq:sigma}), essa quantidade é uma soma espectral. Assim, qualquer
+sensibilidade da opção à volatilidade é, na verdade, uma sensibilidade
+aos autovalores do bulk MP.
+
+A sensibilidade Vega clássica é
+
+\[
+\text{Vega}=\frac{\partial C}{\partial\sigma}.
+\]
+Aplicando a regra da cadeia,
+
+\[
+\frac{\partial C}{\partial\lambda_{k}}=\frac{\partial C}{\partial\sigma}\frac{\partial\sigma}{\partial\lambda_{k}}.
+\]
+ Como
+
+\[
+\sigma=\sqrt{\sum_{j>m}\lambda_{j}},
+\]
+temos
+
+\[
+\frac{\partial\sigma}{\partial\lambda_{k}}=\frac{1}{2\sigma}.
+\]
+Logo,
+
+\[
+\frac{\partial C}{\partial\lambda_{k}}=\frac{1}{2\sigma}\text{Vega}.
+\]
+A Vega pode, portanto, ser interpretada como a soma das sensibilidades
+da opção a cada autovalor do bulk. Os autovalores $\lambda_{k}=\lambda_{k}(\tau)$
+variam no tempo lento (regime de mercado). Assim, a sensibilidade
+$\Theta$ pode ser escrita como
+
+\[
+\Theta=\frac{\partial C}{\partial t}+\frac{\partial C}{\partial\sigma}\frac{\partial\sigma}{\partial\tau},
+\]
+e como
+
+\[
+\frac{\partial\sigma}{\partial\tau}=\frac{1}{2\sigma}\sum_{k>m}\frac{\partial\lambda_{k}}{\partial\tau},
+\]
+ a $\Theta$ mede a sensibilidade da opção à evolução do espectro
+MP. As outras sensibilidades do modelo de Black and Schoules, $\Gamma$,
+$\Delta$ e $\rho$ possuem dependência indireta com $\sigma$, e
+portanto com os autovalores do bulk. 
+
+O drift $\mu$ depende apenas dos modos fora do bulk, pela equação
+(\ref{eq:mu}). Qualquer variação nesses modos altera o valor da opção
+através da dependência de $C$ em $\mu$. Surge, assim, uma sensibilidade
+adicional:
+
+\[
+\frac{\partial C}{\partial\lambda_{k}},\quad k\le m,
+\]
+
+associada à rotação das primitivas estruturais. 
+
+\section{Conexões com a Teoria Moderna de Portfólio: correlação entre primitivas}
+
+A Teoria Moderna de Portfólio utiliza como objeto central a matriz
+de covariância entre ativos,
+
+\[
+\Sigma_{ij}=\langle r_{i}(t),r_{j}(t)\rangle,
+\]
+onde $r_{i}(t)$ e $r_{j}(t)$ são os retornos de dois ativos distintos
+ao longo de uma janela temporal. Essa matriz é interpretada como contendo
+a estrutura de correlação relevante do mercado, e sua decomposição
+espectral fornece os fatores principais de risco utilizados na construção
+de portfólios eficientes. No entanto, à luz da decomposição espectral
+temporal introduzida neste trabalho, essa covariância total pode ser
+analisada de forma mais detalhada.
+
+Para cada ativo $i$, dentro de uma janela, escrevemos
+
+\[
+r_{i}(t)=\sum_{k=1}^{m_{i}}a_{ik}\phi_{ik}(t)+\eta_{i}(t),
+\]
+onde ${\phi_{ik}(t)}$ são as primitivas temporais informativas, isto
+é, as autofunções associadas a autovalores fora do bulk de Marchenko--Pastur,
+$a_{ik}$ são os coeficientes dessa decomposição, $\eta_{i}(t)$ é
+o resíduo puramente ruidoso, cuja estatística é descrita pela teoria
+de matrizes aleatórias e satisfaz, aproximadamente, 
+\[
+\langle\eta_{i}(t),\eta_{i}(t')\rangle\approx\sigma_{i}^{2}\delta(t-t').
+\]
+
+Substituindo essa decomposição na definição da covariância de Markowitz,
+obtemos
+
+\[
+\Sigma_{ij}=\Big\langle\sum_{k}a_{ik}\phi_{ik}(t)+\eta_{i}(t),\sum_{\ell}a_{j\ell}\phi_{j\ell}(t)+\eta_{j}(t)\Big\rangle.
+\]
+
+Expandindo os termos,
+
+\[
+\Sigma_{ij}=\sum_{k,\ell}a_{ik}a_{j\ell}\langle\phi_{ik},\phi_{j\ell}\rangle+\langle\eta_{i},\eta_{j}\rangle.
+\]
+ 
+
+A matriz de covariância observada é, portanto, a soma de duas contribuições
+de naturezas distintas: a correlação estrutural, proveniente do compartilhamento
+de primitivas temporais entre os ativos, e a correlação espúria, proveniente
+da interação entre os resíduos ruidosos previstos pela teoria de Marchenko--Pastur.
+O segundo termo não contém informação estrutural sobre a dinâmica
+do mercado. Ele é consequência puramente estatística da estimação
+finita da covariância e do ruído branco temporal que compõe os resíduos
+$\eta_{i}(t)$. No entanto, esse termo está presente na matriz $\Sigma$
+utilizada na prática na teoria de portfólio.
+
+A parte estrutural da correlação pode ser isolada como
+
+\[
+\Sigma_{ij}^{\mathrm{estr}}=\sum_{k,\ell}a_{ik}a_{j\ell}\langle\phi_{ik},\phi_{j\ell}\rangle.
+\]
+
+Essa expressão revela que dois ativos são correlacionados não porque
+seus retornos totais são semelhantes, mas porque compartilham primitivas
+temporais semelhantes. Em outras palavras, a correlação entre ativos
+é mediada pelos padrões temporais que ambos exibem, como:
+\begin{itemize}
+\item modos de tendência, 
+\item modos de reversão à média,
+\item modos associados a clusters de volatilidade, 
+\item entre outros padrões estruturais capturados pelas autofunções fora
+do bulk.
+\end{itemize}
+Sob essa perspectiva, a covariância total utilizada por Markowitz
+mistura estrutura com ruído estatístico. Isso fornece uma explicação
+conceitual para um fato empírico bem conhecido: matrizes de covariância
+estimadas a partir de retornos são notoriamente instáveis fora da
+amostra \cite{LedoitWolf2004,LedoitWolf2012}, pois parte significativa
+de sua variabilidade provém do termo residual. A matriz de covariância
+estrutural “limpa” adequada para a teoria de portfólio é, portanto,
+
+\[
+\widetilde{\Sigma}_{ij}=\Sigma_{ij}^{\mathrm{estr}},
+\]
+isto é, a covariância reconstruída apenas a partir das primitivas
+informativas de cada ativo.
+
+Uma consequência importante dessa decomposição é que o espaço relevante
+para diversificação não é propriamente o espaço dos ativos, mas o
+espaço das primitivas temporais compartilhadas por eles. A construção
+de portfólios eficientes passa, assim, a depender não apenas da magnitude
+das correlações observadas, mas da identificação dos padrões temporais
+estruturais que os ativos têm em comum.
+
+Essa reformulação fornece uma interpretação espectral mais refinada
+da teoria moderna de portfólio, na qual a correlação entre ativos
+é entendida como correlação entre suas primitivas temporais, enquanto
+as contribuições provenientes do ruído estatístico são explicitamente
+removidas da análise.
+
+\section{Conexão com Modelos de Fatores Utilizados na Indústria}
+
+Grandes investidores institucionais e fundos quantitativos constroem
+carteiras com base em fatores empíricos como \textit{momentum}, \textit{value},
+\textit{low-volatility}, \textit{quality}, entre outros \cite{Bouchaud2003,FamaFrench1993,FamaFrench2015,Carhart1997,AsnessMoskowitzPedersen2013,FrazziniPedersen2014}.
+Muitos fatores são definidos como funções do histórico de preços e
+retornos dos ativos, e são amplamente utilizados por gestores como
+AQR, BlackRock, Two Sigma e Bridgewater.
+
+Esses fatores não são definidos a partir de uma teoria dinâmica do
+preço, mas como observáveis estatísticos do comportamento passado
+das séries temporais. À luz da decomposição espectral temporal introduzida
+neste trabalho, mostraremos que esses fatores podem ser expressos
+explicitamente em termos dos autovalores $\lambda_{k}$, autovetores
+temporais $\phi_{k}(t)$ e dos coeficientes $a_{ik}$ que conectam
+cada ativo às primitivas temporais do regime.
+
+\subsection{Momentum}
+
+Definido como
+
+\begin{equation}
+\text{Mom}=\int_{t-T}^{t}P(s)\,ds,
+\end{equation}
+
+temos
+
+\begin{equation}
+\text{Mom}=\sum_{k}a_{k}M_{k},\quad M_{k}=\int\phi_{k}(s)\,ds.
+\end{equation}
+
+Momentum é, portanto, uma projeção linear dos coeficientes espectrais.
+Entretanto, essa soma inclui os modos do bulk, que não trazem informação
+real. Assim, definimos o momentum efetivo como sendo a soma somente
+sobre os modos fora do bulk
+\[
+\text{Mom}^{eff}=\sum_{k=1}^{m}a_{k}M_{k}
+\]
+
+
+\subsection{Volatilidade e Low-Vol}
+
+A variância temporal é
+
+\begin{equation}
+\sigma^{2}=\int P^{2}(t)\,dt\approx\sigma_{\text{modos principais}}^{2}+\sigma_{\text{bulk}}^{2}=\sum_{k=1}^{m}a_{k}^{2}+\sum_{k>m}\lambda_{k},
+\end{equation}
+assim, um ativo de baixa volatilidade é um ativo que minimiza 
+\[
+\sigma_{\text{modos principais}}^{2}=\sum_{k=1}^{m}a_{k}^{2},
+\]
+pois os modos do bulk não possuem informação real.
+
+\section{Explicação Espectral da Fenomenologia Observada no Mercado}
+
+Na introdução deste trabalho foram descritas diversas características
+empíricas recorrentes observadas em séries temporais de preços financeiros.
+Mostramos agora que essas características emergem naturalmente da
+estrutura espectral do operador de covariância temporal $K$.
+
+\subsection{Persistência de padrões dentro de regimes}
+
+Dentro de um regime, o espectro informativo de $K$ é estável e as
+primitivas temporais $\phi_{k}(t)$ permanecem aproximadamente invariantes.
+Como os retornos são combinações lineares dessas primitivas,
+
+\begin{equation}
+P_{i}(t)=\sum_{k}a_{ik}\,\phi_{k}(t),
+\end{equation}
+
+os padrões observados nos preços persistem enquanto o espectro se
+mantém estável.
+
+\subsection{Mudanças abruptas de comportamento}
+
+Transições de regime correspondem a rotações espectrais significativas
+das primitivas $\phi_{k}(t)$ e a alterações no conjunto de autovalores
+fora do bulk de Marchenko--Pastur. Isso implica que a base temporal
+que descreve os retornos muda subitamente, produzindo a sensação empírica
+de quebra estrutural no mercado.
+
+\subsection{Predominância de ruído}
+
+A maior parte do espectro de $K$ pertence ao bulk de Marchenko--Pastur,
+o que implica que
+
+\[
+P_{i}(t)=\sum_{k\le m}a_{ik}\phi_{k}(t)+\sum_{k>m}a_{ik}\phi_{k}(t),
+\]
+onde o segundo termo é puramente ruidoso. Isso explica por que grande
+parte da variabilidade observada nos preços não contém informação
+estrutural.
+
+\subsection{Traders técnicos e padrões gráficos}
+
+Traders técnicos baseiam suas decisões na identificação de padrões
+recorrentes nos gráficos de preços, como tendências, canais, suportes,
+resistências e formações geométricas. Dentro do modelo espectral,
+tais padrões não são coincidências visuais, mas consequências diretas
+da persistência das primitivas temporais $\phi_{k}(t)$ dentro de
+um regime. Como os retornos são combinações lineares dessas funções,
+
+\begin{equation}
+P_{i}(t)=\sum_{k}a_{ik}\,\phi_{k}(t),
+\end{equation}
+a repetição dos mesmos modos dominantes gera estruturas gráficas recorrentes
+que podem ser exploradas empiricamente. A análise técnica pode, portanto,
+ser interpretada como uma identificação heurística das primitivas
+temporais do regime vigente.
+
+\subsection{Algoritmos de alta frequência (HFT)}
+
+Algoritmos HFT operam explorando microestruturas temporais de curtíssimo
+prazo. No contexto espectral, essas microestruturas correspondem a
+modos de alta frequência associados ao bulk de Marchenko--Pastur.
+
+Como esses modos são numerosos e de natureza ruidosa, mas estatisticamente
+estáveis dentro do regime, HFTs conseguem explorar pequenas assimetrias
+estatísticas recorrentes nesses componentes espectrais de alta frequência,
+sem depender dos modos informativos de baixa frequência.
+
+\subsection{Clusters de volatilidade}
+
+Um fenômeno amplamente documentado é a presença de clusters de volatilidade
+\cite{Cont2001,Engle1982,Bollerslev1986}, onde períodos de alta variabilidade
+são seguidos por outros períodos igualmente voláteis.
+
+No modelo espectral, a volatilidade é dada por
+
+\begin{equation}
+\sigma_{i}^{2}=\sum_{k}a_{ik}^{2}.
+\end{equation}
+
+Como os coeficientes associados ao bulk são numerosos e dominantes,
+pequenas rotações espectrais ou redistribuições de energia entre esses
+modos produzem pequenas variações na soma total, gerando os clusters
+de volatilidade observados empiricamente. Essa persistência não requer
+memória explícita no processo de preços, mas surge naturalmente da
+estrutura espectral do operador $K$. 
+
+\subsection{Eficácia intermitente de fatores}
+
+Fatores como momentum e baixa volatilidade funcionam enquanto as primitivas
+informativas permanecem estáveis. Quando ocorre rotação espectral,
+os funcionais que definiam esses fatores deixam de capturar as novas
+combinações relevantes, explicando sua perda de eficácia.
+
+\subsection{Volatilidade estrutural}
+
+A decomposição
+
+\[
+\sigma_{i}^{2}=\sum_{k}a_{ik}^{2}
+\]
+
+mostra que a volatilidade é a soma das energias espectrais do ativo.
+A parcela dominante proveniente do bulk explica a presença de uma
+volatilidade estrutural aparentemente inevitável.
+
+\bibliographystyle{plain}
+\bibliography{referencias}
+
+\end{document}

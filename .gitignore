@@ -1,0 +1,34 @@
+# Executáveis e instaladores
+*.exe
+*.msi
+
+# Arquivos compactados
+*.zip
+
+# Arquivos de dados muito grandes (>100 MB — limite do GitHub)
+alpaca/data/SPY_1min.csv
+
+# Ambiente virtual Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variáveis de ambiente (chaves de API)
+.env
+
+# Arquivos temporários do LaTeX
+*.aux
+*.log
+*.synctex.gz
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+
+# Arquivos do sistema Windows
+desktop.ini
+Thumbs.db
