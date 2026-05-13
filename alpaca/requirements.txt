@@ -1,3 +1,0 @@
-alpaca-py
-pandas
-python-dotenv
