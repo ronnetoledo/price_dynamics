@@ -251,12 +251,15 @@ estruturada, sinal mais confiável; baixo → quase ruído, não apostar.
   lento → a memória de regime **genuína é fraca, porém long-memory** (não decai a
   zero).
 
-> **Crítico para o MSD/β (núcleo do artigo):** o mesmo efeito de sobreposição infla
-> a correlação de curto lag de *qualquer* estatística de janela deslizante —
-> inclusive o processo espectral `Kₜ` cujo MSD fornece o expoente β. A sobreposição
-> suaviza artificialmente o processo e pode **enviesar β para cima**
-> (mais persistente/superdifusivo) nos lags curtos. Ao ajustar β, usar lags
-> `≥ window/step` (regime sem sobreposição) ou corrigir o efeito explicitamente.
+> **Relação com o MSD/β (núcleo do artigo):** o mesmo efeito de sobreposição infla
+> a correlação de *curto* lag de qualquer estatística de janela deslizante —
+> inclusive o processo espectral `Kₜ`. **Porém o expoente β está protegido:** o
+> ajuste em `msd_beta_sliding_window_2.py` usa a cauda (`tail_frac=0.7`, lags ~60–199
+> janelas), bem acima do limite de sobreposição (~17 = window/step). Nessa região a
+> sobreposição apenas renormaliza o *prefator* de difusão, não o *expoente*. O viés
+> de curto lag afeta estatísticas como o ACF de `f_struct`, não o β da cauda —
+> **desde que** o fit permaneça acima de `window/step` (cuidado com séries curtas,
+> onde `max_lag = T−1` pode empurrar o fit para dentro da zona sobreposta).
 
 ## 5. Experimento mínimo (com o null correto)
 
