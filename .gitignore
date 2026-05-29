@@ -51,5 +51,14 @@ src_newest/*.csv
 src_newest/*.pdf
 src_newest/*.png
 
+# Figuras geradas (artefatos regeneráveis)
+src_fig*.pdf
+src_fig*.png
+alpaca/*_fig*.pdf
+alpaca/*_fig*.png
+
+# Stub temporário
+src_newest/test_simple.py
+
 # Instaladores antigos
 src_old/*.exe

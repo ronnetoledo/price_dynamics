@@ -1,23 +1,52 @@
 """
-Core da decomposição espectral PCA com janela deslizante.
+Core da decomposição espectral PCA com janela deslizante — versão otimizada.
 
-Lê dados OHLCV do Parquet (data_parquet/) com fallback para CSV.
-Roda PCA por janela e persiste eigenvalores + eigenvetores via decomp_io.
+Estratégia de cálculo (duplo batch + streaming):
+
+  FASE 0 — double stride trick (zero-copy)
+    Todos os embeddings de Hankel são construídos como uma única view de ret_C
+    sem nenhuma cópia de dados:
+        all_X_view[i, j, k] = ret_C[i*step + j + k]
+    Forma: (n_centers, n_samp, embed_dim) — zero bytes extras além de ret_C.
+
+  FASE 1 — batch de covariâncias (COV_BATCH janelas por vez)
+    Copia COV_BATCH janelas → centraliza vetorizadamente → matmul em batch:
+        C_batch = Xc.T @ Xc / (n_samp-1)     shape: (COV_BATCH, d, d)
+    É uma chamada única de BLAS dgemm em batch → satura todos os cores.
+    Peak de memória: COV_BATCH × n_samp × d × 8 bytes.
+
+  FASE 2 — batch eigendecomposição (EIGH_CHUNK covariâncias por vez)
+    np.linalg.eigh em batch sobre (EIGH_CHUNK, d, d) → BLAS usa todos os cores.
+    Limiar MP, m(τ) e entropia calculados vetorizadamente sobre o batch.
+
+  FASE 3 — streaming Parquet
+    Após cada flush do eigh, escreve diretamente no Parquet (PyArrow writer).
+    Memória constante: 2 × EIGH_CHUNK × d² × 8 bytes, independente de n_centers.
+    Resolve o problema de acumulação (ex: M1 com 88k janelas → ~34 GB sem streaming).
 
 Uso como script:
     python decomp_pca.py NVDA 1day
-    python decomp_pca.py PETR4 D1 --step 20 --embed 70
-    python decomp_pca.py AAPL 1day --step 20 --embed 70 --store-mode structural_only
-    python decomp_pca.py NVDA 1day --overwrite
+    python decomp_pca.py NVDA M1 --step 20 --embed 70 --mem-budget 512
+    python decomp_pca.py PETR4 D1 --store-mode structural_only --overwrite
 """
 
+# BLAS thread saturation — deve estar antes do import do numpy
+import os
+import sys
+_N_CPU = os.cpu_count() or 1
+os.environ.setdefault('OMP_NUM_THREADS',      str(_N_CPU))
+os.environ.setdefault('OPENBLAS_NUM_THREADS', str(_N_CPU))
+os.environ.setdefault('MKL_NUM_THREADS',      str(_N_CPU))
+
 import argparse
+import gc
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from numpy.linalg import eigh
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 import decomp_io
 
@@ -29,44 +58,37 @@ _HERE     = Path(__file__).parent
 DATA_ROOT = _HERE.parent / "data_parquet"
 
 _CSV_DIRS = {
-    "alpaca":      _HERE.parent / "alpaca" / "SPY500_DATA",
-    "metatrader":  _HERE / "B3_DATA",
+    "alpaca":     _HERE.parent / "alpaca" / "SPY500_DATA",
+    "metatrader": _HERE / "B3_DATA",
 }
 
-# Normalização de rótulos de timeframe → nome na partição Parquet
 _TF_TO_PARQUET = {
-    "1day":  "D1",  "1d":  "D1",  "D1":  "D1",
-    "1hour": "H1",  "1h":  "H1",  "H1":  "H1",
-    "4hour": "H4",  "4h":  "H4",  "H4":  "H4",
-    "1min":  "M1",  "M1":  "M1",
-    "5min":  "M5",  "M5":  "M5",
-    "15min": "M15", "M15": "M15",
-    "30min": "M30", "M30": "M30",
+    '1day': 'D1', '1d': 'D1', 'D1': 'D1',
+    '1hour': 'H1', '1h': 'H1', 'H1': 'H1',
+    '4hour': 'H4', '4h': 'H4', 'H4': 'H4',
+    '1min':  'M1', 'M1': 'M1',
+    '5min':  'M5', 'M5': 'M5',
+    '15min': 'M15','M15': 'M15',
+    '30min': 'M30','M30': 'M30',
 }
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Carregamento de dados OHLCV
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_parquet(symbol: str, tf_parquet: str) -> pd.DataFrame:
-    """Lê e concatena todos os anos disponíveis na partição Parquet."""
     for source in ("alpaca", "metatrader"):
-        base = DATA_ROOT / f"source={source}" / f"symbol={symbol}" / f"timeframe={tf_parquet}"
-        if not base.exists():
-            continue
-        parts = sorted(base.glob("year=*/data.parquet"))
-        if not parts:
-            continue
-        df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
-        return df.sort_values("ts").reset_index(drop=True)
+        base  = DATA_ROOT / f"source={source}" / f"symbol={symbol}" / f"timeframe={tf_parquet}"
+        parts = sorted(base.glob("year=*/data.parquet")) if base.exists() else []
+        if parts:
+            df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+            return df.sort_values("ts").reset_index(drop=True)
     raise FileNotFoundError(
-        f"Parquet não encontrado: symbol={symbol} timeframe={tf_parquet} em {DATA_ROOT}"
+        f"Parquet nao encontrado: symbol={symbol} timeframe={tf_parquet} em {DATA_ROOT}"
     )
 
 
 def _load_csv(symbol: str, tf_label: str) -> pd.DataFrame:
-    """Fallback: lê CSV bruto da Alpaca ou MetaTrader."""
     for src, folder in _CSV_DIRS.items():
         path = folder / f"{symbol}_{tf_label}.csv"
         if not path.exists():
@@ -80,12 +102,12 @@ def _load_csv(symbol: str, tf_label: str) -> pd.DataFrame:
                 df["ts"] = df["ts"].dt.tz_localize(None)
         return df.sort_values("ts").reset_index(drop=True)
     raise FileNotFoundError(
-        f"CSV não encontrado: {symbol}_{tf_label}.csv nos diretórios {list(_CSV_DIRS.values())}"
+        f"CSV nao encontrado: {symbol}_{tf_label}.csv em {list(_CSV_DIRS.values())}"
     )
 
 
 def load_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame:
-    """Carrega OHLCV priorizando Parquet; fallback para CSV."""
+    """Carrega OHLCV do Parquet (prioritario) com fallback para CSV."""
     tf_parquet = _TF_TO_PARQUET.get(tf_label, tf_label)
     try:
         return _load_parquet(symbol, tf_parquet)
@@ -98,110 +120,131 @@ def load_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_log_returns(df: pd.DataFrame):
-    """
-    Calcula log-retornos de OHLC.
-
-    Retorna
-    -------
-    ts   : (N-1,) datetime64  — timestamps alinhados com os retornos
-    ret_C: (N-1,) float64     — log-retornos do close (usado no modo scalar)
-    """
+    """Retorna (ts[1:], ret_C) com log-retornos do close."""
     C  = df["close"].values.astype(np.float64)
     ts = pd.to_datetime(df["ts"].values)
     return ts[1:], np.diff(np.log(C))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Funções matemáticas do núcleo
+# Cálculo de batch sizes a partir do budget de memória
 # ─────────────────────────────────────────────────────────────────────────────
 
-def hankel_embed(x: np.ndarray, m: int) -> np.ndarray:
-    """Embedding de Hankel via stride_tricks — zero-copy, sem alocação extra."""
-    x = np.ascontiguousarray(x, dtype=np.float64)
-    N = len(x) - m
-    strides = (x.strides[0], x.strides[0])
-    return np.lib.stride_tricks.as_strided(x, shape=(N, m), strides=strides)
-
-
-def pca_cov(X: np.ndarray):
+def _batch_sizes(embed_dim: int, n_samp: int, mem_budget_mb: int):
     """
-    PCA via matriz de covariância amostral.
+    Retorna (COV_BATCH, EIGH_CHUNK) respeitando o budget de RAM.
 
-    Retorna
-    -------
-    vals : (d,)   float64 — autovalores em ordem decrescente
-    vecs : (d, d) float64 — autovetores correspondentes (colunas)
-    var  : float          — variância média empírica (usada no limiar MP)
+    Budget dividido:
+        40% → Xc batch  : COV_BATCH × n_samp × d × 8 bytes
+        50% → eigh buf  : EIGH_CHUNK × d² × 8 × 2 bytes (C + V float64)
+        10% → folga para DataFrames e conversão float32
     """
-    C    = np.cov(X, rowvar=False)
-    var  = float(np.mean(np.var(X, axis=0, ddof=1)))
-    vals, vecs = eigh(C)
-    idx  = np.argsort(vals)[::-1]
-    return vals[idx], vecs[:, idx], var
+    budget = mem_budget_mb * 1024 * 1024
+    cov_bytes_per_win  = n_samp * embed_dim * 8
+    eigh_bytes_per_win = embed_dim * embed_dim * 8 * 2   # C + V (float64)
 
+    cov_batch  = max(50,  int(0.40 * budget / cov_bytes_per_win))
+    eigh_chunk = max(100, int(0.50 * budget / eigh_bytes_per_win))
 
-def mp_threshold(var: float, q: float) -> float:
-    """Limiar superior de Marchenko-Pastur: λ+ = σ²(1 + √q)²."""
-    return var * (1.0 + np.sqrt(q)) ** 2
-
-
-def spectral_entropy(vals: np.ndarray, d: int) -> float:
-    """Entropia de Shannon normalizada pela dimensão: S ∈ [0, 1]."""
-    lams = np.maximum(vals, 1e-15)
-    p    = lams / lams.sum()
-    return float(-np.sum(p * np.log(p)) / np.log(d))
-
-
-def build_window(ret_C: np.ndarray, center: int,
-                 window: int, embed: int) -> np.ndarray | None:
-    """
-    Extrai a janela causal centrada em `center` e constrói o embedding de Hankel.
-
-    Usa `window` pontos à esquerda de `center`, centraliza a série e aplica
-    o embedding. Retorna None se a janela sair dos limites.
-
-    Retorna X de shape (window - embed, embed).
-    """
-    start = center - window
-    if start < 0:
-        return None
-    seg = ret_C[start:center]
-    seg = seg - seg.mean()
-    return hankel_embed(seg, embed)
+    return min(cov_batch, 5_000), min(eigh_chunk, 10_000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pipeline principal de decomposição
+# Escrita Parquet de um chunk (helper interno)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _list_array(mat: np.ndarray) -> pa.ListArray:
+    """
+    Constrói um list<float32> a partir de (n, width) contíguo, sem objetos Python.
+
+    Cada linha vira uma lista de `width` valores. Os valores compartilham o buffer
+    numpy (zero-copy nos floats); só os offsets são alocados. Substitui o padrão
+    `[mat[i].tolist() for i in range(n)]`, que materializava n×width floats Python
+    (~24 bytes cada) e rodava single-thread — origem do pico de RAM na escrita.
+    """
+    n, width = mat.shape
+    flat    = np.ascontiguousarray(mat, dtype=np.float32).reshape(-1)
+    values  = pa.array(flat, type=pa.float32())
+    offsets = pa.array(np.arange(0, (n + 1) * width, width, dtype=np.int32))
+    return pa.ListArray.from_arrays(offsets, values)
+
+
+def _write_eigh_chunk(writer_evals: pq.ParquetWriter,
+                      writer_evecs: pq.ParquetWriter,
+                      ts_chunk: np.ndarray,
+                      vals: np.ndarray,
+                      vecs: np.ndarray,
+                      m_arr: np.ndarray,
+                      lam_arr: np.ndarray,
+                      entr_arr: np.ndarray,
+                      embed_dim: int,
+                      store_mode: str) -> None:
+    """Monta as Tables PyArrow do chunk a partir de buffers numpy e escreve no Parquet."""
+    n = len(ts_chunk)
+
+    # ── eigenvalues ──────────────────────────────────────────────────────────
+    writer_evals.write_table(pa.Table.from_arrays(
+        [
+            pa.array(ts_chunk, type=pa.timestamp("us")),
+            pa.array(m_arr,    type=pa.int16()),
+            pa.array(lam_arr,  type=pa.float32()),
+            pa.array(entr_arr, type=pa.float32()),
+            _list_array(vals),
+        ],
+        schema=decomp_io._SCHEMA_EVALS,
+    ))
+
+    # ── eigenvectors ─────────────────────────────────────────────────────────
+    # vecs: (n, d, d) com vecs[i, :, k] = k-ésimo autovetor → transpor para
+    # (n, d_modo, d) de modo que a linha [i, k] seja o autovetor do modo k.
+    vt = vecs.transpose(0, 2, 1)                          # (n, d, d_modo→linha)
+    mode_grid = np.broadcast_to(np.arange(embed_dim, dtype=np.int16), (n, embed_dim))
+
+    if store_mode == "all":
+        ev_vecs_mat = vt.reshape(n * embed_dim, embed_dim)
+        ev_ts       = np.repeat(ts_chunk, embed_dim)
+        ev_midx     = mode_grid.reshape(-1)
+        ev_isstruct = ev_midx < np.repeat(m_arr, embed_dim)
+    else:  # structural_only — só os m primeiros modos de cada janela (vetorizado)
+        mask        = mode_grid < m_arr[:, np.newaxis]    # (n, d) bool
+        flat_mask   = mask.reshape(-1)
+        ev_vecs_mat = vt.reshape(n * embed_dim, embed_dim)[flat_mask]
+        ev_ts       = np.repeat(ts_chunk, m_arr.astype(np.int64))
+        ev_midx     = mode_grid[mask]
+        ev_isstruct = np.ones(len(ev_midx), dtype=bool)
+
+    writer_evecs.write_table(pa.Table.from_arrays(
+        [
+            pa.array(ev_ts,      type=pa.timestamp("us")),
+            pa.array(ev_midx,    type=pa.int16()),
+            pa.array(ev_isstruct, type=pa.bool_()),
+            _list_array(ev_vecs_mat),
+        ],
+        schema=decomp_io._SCHEMA_EVECS,
+    ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline principal de decomposição — streaming + double batch
 # ─────────────────────────────────────────────────────────────────────────────
 
 def decompose(symbol: str, tf_label: str,
               step: int, embed_dim: int,
+              dest: Path,
               window: int = None,
-              store_mode: str = "all") -> tuple[pd.DataFrame, pd.DataFrame]:
+              store_mode: str = "all",
+              mem_budget_mb: int = 256) -> dict:
     """
-    Decomposição espectral por janela deslizante.
+    Decomposição espectral com streaming Parquet e double batch (cov + eigh).
 
-    Para cada janela centrada em τ:
-      1. Extrai `window` pontos de log-retorno do close
-      2. Constrói embedding de Hankel X ∈ R^{(window-embed) × embed}
-      3. Calcula covariância amostral C = X^T X / (n-1)
-      4. Eigendecomposição: C = V diag(λ) V^T  (eigh, autovalores reais)
-      5. Aplica limiar Marchenko-Pastur para separar modos estruturais (m)
-      6. Calcula entropia espectral normalizada
+    Escreve diretamente em `dest/eigenvalues.parquet` e `dest/eigenvectors.parquet`.
+    Retorna dict com estatísticas da execução.
 
     Parâmetros
     ----------
-    symbol     : ticker (ex: 'NVDA', 'PETR4')
-    tf_label   : rótulo do timeframe (ex: '1day', 'D1', 'H1')
-    step       : passo da janela deslizante
-    embed_dim  : dimensão d do embedding de Hankel
-    window     : tamanho da janela (padrão: 5 × embed_dim)
-    store_mode : 'all'             — armazena todos os d modos por janela
-                 'structural_only' — armazena apenas os m modos estruturais
-
-    Retorna
-    -------
-    (evals_df, evecs_df) prontos para decomp_io.write()
+    dest        : diretório de destino dos Parquet (criado por run())
+    store_mode  : 'all' | 'structural_only'
+    mem_budget_mb : orçamento de RAM em MB (controla COV_BATCH e EIGH_CHUNK)
     """
     if window is None:
         window = 5 * embed_dim
@@ -209,95 +252,150 @@ def decompose(symbol: str, tf_label: str,
     df        = load_ohlcv(symbol, tf_label)
     ts, ret_C = compute_log_returns(df)
 
-    centers = list(range(window, len(ret_C) - window, step))
-    n       = len(centers)
-    if n == 0:
+    n_samp    = window - embed_dim          # linhas em cada X (constante)
+    centers   = np.arange(window, len(ret_C) - window, step, dtype=np.int64)
+    n_centers = len(centers)
+
+    if n_centers == 0:
         raise ValueError(
-            f"Série muito curta para window={window}, step={step}: "
-            f"len(ret_C)={len(ret_C)}"
+            f"Serie muito curta para window={window}, step={step}: len={len(ret_C)}"
         )
 
+    COV_BATCH, EIGH_CHUNK = _batch_sizes(embed_dim, n_samp, mem_budget_mb)
+    q = embed_dim / n_samp   # razão aspecto MP — constante
+
     print(f"  {symbol} | {tf_label} | step={step} embed={embed_dim} "
-          f"window={window} | {n} janelas")
+          f"window={window} | {n_centers} janelas")
+    print(f"  COV_BATCH={COV_BATCH}  EIGH_CHUNK={EIGH_CHUNK}  "
+          f"budget={mem_budget_mb}MB  store={store_mode}")
 
-    # ── pré-alocação ─────────────────────────────────────────────────────────
-    ts_valid  = []
-    m_arr     = np.empty(n, dtype=np.int16)
-    lam_arr   = np.empty(n, dtype=np.float32)
-    entr_arr  = np.empty(n, dtype=np.float32)
-    evals_mat = np.empty((n, embed_dim), dtype=np.float32)   # (T, d)
-    evecs_mat = np.empty((n, embed_dim, embed_dim), dtype=np.float32)  # (T, d, d)
+    # ── FASE 0: double stride trick — view zero-copy de todos os embeddings ──
+    # all_X_view[i, j, k] = ret_C[i*step + j + k]
+    # Shape: (n_centers, n_samp, embed_dim)  ← zero bytes extras além de ret_C
+    s = ret_C.strides[0]
+    all_X_view = np.lib.stride_tricks.as_strided(
+        ret_C,
+        shape=(n_centers, n_samp, embed_dim),
+        strides=(step * s, s, s),
+    )
 
-    t0    = time.time()
-    count = 0
+    # Timestamps por janela
+    ts_np = ts.values.astype("datetime64[us]")
+    ts_centers = ts_np[centers]   # (n_centers,)
 
-    # ── loop de decomposição ──────────────────────────────────────────────────
-    for center in centers:
-        X = build_window(ret_C, center, window, embed_dim)
-        if X is None:
-            continue
+    # ── PyArrow writers para streaming ───────────────────────────────────────
+    dest.mkdir(parents=True, exist_ok=True)
+    writer_evals = pq.ParquetWriter(dest / "eigenvalues.parquet",
+                                    decomp_io._SCHEMA_EVALS, compression="snappy")
+    writer_evecs = pq.ParquetWriter(dest / "eigenvectors.parquet",
+                                    decomp_io._SCHEMA_EVECS, compression="snappy")
 
-        vals, vecs, var = pca_cov(X)
+    # ── Buffer do eigh — pré-alocado, reusado entre flushes ─────────────────
+    C_buf  = np.empty((EIGH_CHUNK, embed_dim, embed_dim), dtype=np.float64)
+    v_buf  = np.empty(EIGH_CHUNK, dtype=np.float64)
+    ts_buf = np.empty(EIGH_CHUNK, dtype="datetime64[us]")
+    buf_n  = 0       # janelas acumuladas no buffer atual
+    n_written = 0    # total de janelas escritas no Parquet
 
-        q        = embed_dim / X.shape[0]
-        lam_plus = mp_threshold(var, q)
-        m        = int(np.sum(vals > lam_plus))
-        entropy  = spectral_entropy(vals, embed_dim)
+    def _flush_eigh(n: int) -> None:
+        """Processa n janelas do buffer e escreve no Parquet."""
+        nonlocal n_written
 
-        ts_valid.append(ts[center])
-        m_arr   [count] = np.int16(m)
-        lam_arr [count] = np.float32(lam_plus)
-        entr_arr[count] = np.float32(entropy)
-        evals_mat[count] = vals.astype(np.float32)
-        evecs_mat[count] = vecs.astype(np.float32)  # (d, d): colunas = autovetores
-        count += 1
+        Ca = C_buf[:n]
+        va = v_buf[:n]
+        ts_chunk = ts_buf[:n]
+
+        # eigendecomposição em batch — BLAS usa todos os cores aqui
+        av, ve = np.linalg.eigh(Ca)
+        vals = av[:, ::-1].astype(np.float32)   # descrescente, float32
+        vecs = ve[:, :, ::-1].astype(np.float32)
+        del av, ve
+
+        # limiar MP e m(τ) — vetorizados
+        lam  = (va * (1.0 + np.sqrt(q)) ** 2).astype(np.float32)
+        m    = np.sum(vals > lam[:, np.newaxis], axis=1).astype(np.int16)
+
+        # entropia espectral — vetorizada
+        vp   = np.maximum(vals, 1e-15)
+        p    = vp / vp.sum(axis=1, keepdims=True)
+        entr = (-np.sum(p * np.log(p), axis=1) / np.log(embed_dim)).astype(np.float32)
+        del vp, p
+
+        _write_eigh_chunk(writer_evals, writer_evecs,
+                          ts_chunk, vals, vecs, m, lam, entr,
+                          embed_dim, store_mode)
+        del vals, vecs, lam, m, entr
+        n_written += n
+
+    # ── loop principal: COV batches → eigh buffer → flush ────────────────────
+    t0            = time.time()
+    n_cov_batches = 0
+    n_eigh_flushes = 0
+
+    for cov_start in range(0, n_centers, COV_BATCH):
+        cov_end = min(cov_start + COV_BATCH, n_centers)
+        batch   = cov_end - cov_start
+
+        # FASE 1: batch de covariâncias
+        # Xc: cópia necessária (view stride_tricks é read-only por convenção)
+        Xc = all_X_view[cov_start:cov_end].copy()        # (batch, n_samp, d)
+        Xc -= Xc.mean(axis=1, keepdims=True)             # centra in-place, vetorizado
+
+        # Batched matmul: (batch, d, n_samp) × (batch, n_samp, d) → (batch, d, d)
+        # Esta é a chamada que satura o BLAS com múltiplos cores
+        C_batch   = Xc.transpose(0, 2, 1) @ Xc / (n_samp - 1)
+
+        # Variância empírica por janela (para limiar MP)
+        var_batch = Xc.var(axis=1, ddof=1).mean(axis=-1)   # (batch,)
+        ts_batch  = ts_centers[cov_start:cov_end]           # (batch,)
+        del Xc
+
+        # FASE 2: alimenta o buffer do eigh, flushing quando cheio
+        written = 0
+        while written < batch:
+            space = EIGH_CHUNK - buf_n
+            take  = min(space, batch - written)
+            C_buf [buf_n:buf_n+take] = C_batch[written:written+take]
+            v_buf [buf_n:buf_n+take] = var_batch[written:written+take]
+            ts_buf[buf_n:buf_n+take] = ts_batch[written:written+take]
+            buf_n   += take
+            written += take
+
+            if buf_n >= EIGH_CHUNK:
+                _flush_eigh(EIGH_CHUNK)
+                n_eigh_flushes += 1
+                buf_n = 0
+
+        del C_batch, var_batch
+        n_cov_batches += 1
+
+        # progresso
+        elapsed = time.time() - t0
+        speed   = n_written / elapsed if elapsed > 0 else 0
+        pct     = 100.0 * (cov_end) / n_centers
+        eta     = (n_centers - cov_end) / speed if speed > 0 else float("inf")
+        filled  = int(pct / 5)
+        bar     = '#' * filled + '.' * (20 - filled)
+        print(f"    [{bar}] {pct:5.1f}%  "
+              f"cov={n_cov_batches}  eigh={n_eigh_flushes}  "
+              f"{elapsed:.1f}s  ETA {eta:.0f}s  {speed:.0f} jan/s",
+              flush=True)
+
+    # flush do buffer parcial final
+    if buf_n > 0:
+        _flush_eigh(buf_n)
+
+    writer_evals.close()
+    writer_evecs.close()
+    gc.collect()
 
     elapsed = time.time() - t0
-    print(f"  concluído: {count}/{n} janelas válidas em {elapsed:.1f}s "
-          f"({elapsed/count*1000:.1f}ms/janela)")
+    print(f"  concluido: {n_written} janelas | {elapsed:.1f}s "
+          f"({1000*elapsed/n_written:.1f} ms/jan)  "
+          f"cov_batches={n_cov_batches}  eigh_flushes={n_eigh_flushes+1}")
 
-    # ── recorta arrays ao tamanho real ────────────────────────────────────────
-    ts_valid  = np.array(ts_valid, dtype="datetime64[us]")
-    m_arr     = m_arr[:count]
-    lam_arr   = lam_arr[:count]
-    entr_arr  = entr_arr[:count]
-    evals_mat = evals_mat[:count]
-    evecs_mat = evecs_mat[:count]
-
-    # ── monta eigenvalues DataFrame (formato largo) ───────────────────────────
-    evals_df = pd.DataFrame({
-        "ts":          ts_valid,
-        "m":           m_arr,
-        "lam_plus":    lam_arr,
-        "entropy":     entr_arr,
-        "eigenvalues": [evals_mat[i].tolist() for i in range(count)],
-    })
-
-    # ── monta eigenvectors DataFrame (formato longo) ──────────────────────────
-    # Uma linha por (janela, modo). Comprimido eficientemente pelo Parquet
-    # porque os campos ts e is_structural têm baixa cardinalidade.
-    evec_ts       = []
-    evec_midx     = []
-    evec_isstruct = []
-    evec_vecs     = []
-
-    for i in range(count):
-        m_i     = int(m_arr[i])
-        n_modes = embed_dim if store_mode == "all" else m_i
-        for k in range(n_modes):
-            evec_ts.append(ts_valid[i])
-            evec_midx.append(np.int16(k))
-            evec_isstruct.append(bool(k < m_i))
-            evec_vecs.append(evecs_mat[i, :, k].tolist())  # k-ésimo autovetor
-
-    evecs_df = pd.DataFrame({
-        "ts":            evec_ts,
-        "mode_idx":      np.array(evec_midx, dtype=np.int16),
-        "is_structural": evec_isstruct,
-        "eigenvector":   evec_vecs,
-    })
-
-    return evals_df, evecs_df
+    return {"n_windows": n_written, "elapsed_s": elapsed,
+            "cov_batches": n_cov_batches, "eigh_flushes": n_eigh_flushes + 1}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -308,28 +406,25 @@ def run(symbol: str, tf_label: str,
         step: int = 20, embed_dim: int = 70,
         window: int = None,
         store_mode: str = "all",
+        mem_budget_mb: int = 256,
         overwrite: bool = False,
         decomp_root: Path = None) -> None:
-    """
-    Orquestra decomposição e persistência. Pula se já existir e overwrite=False.
-    """
+    """Orquestra decomposição e persistência. Pula se já existir e overwrite=False."""
     root       = decomp_root or decomp_io.DECOMP_ROOT
     tf_parquet = _TF_TO_PARQUET.get(tf_label, tf_label)
 
     if not overwrite and decomp_io.exists(symbol, tf_parquet, step, embed_dim, root):
-        print(f"  [skip] {symbol} {tf_label} step={step} embed={embed_dim} — já existe")
+        print(f"  [skip] {symbol} {tf_label} step={step} embed={embed_dim} "
+              f"-- parquet ja existe")
         return
 
-    print(f"\n[decomp] {symbol} | {tf_label} | step={step} | embed={embed_dim}")
-    evals_df, evecs_df = decompose(symbol, tf_label, step, embed_dim,
-                                   window=window, store_mode=store_mode)
+    dest = decomp_io._partition_path(root, symbol, tf_parquet, step, embed_dim)
 
-    decomp_io.write(evals_df, evecs_df, symbol, tf_parquet, step, embed_dim, root)
+    decompose(symbol, tf_label, step, embed_dim,
+              dest=dest, window=window,
+              store_mode=store_mode, mem_budget_mb=mem_budget_mb)
 
-    n_win = len(evals_df)
-    n_evec = len(evecs_df)
-    print(f"  [salvo] {symbol}/{tf_parquet}/step={step}/embed={embed_dim} "
-          f"— {n_win} janelas, {n_evec} linhas de eigenvetores")
+    print(f"  [salvo] {symbol}/{tf_parquet}/step={step}/embed={embed_dim}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -338,30 +433,30 @@ def run(symbol: str, tf_label: str,
 
 def _parse_args():
     p = argparse.ArgumentParser(
-        description="Decomposição espectral PCA de séries financeiras → Parquet",
+        description="Decomposicao espectral PCA de series financeiras -> Parquet",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("symbol",    help="Ticker (ex: NVDA, PETR4)")
-    p.add_argument("timeframe", help="Timeframe (ex: 1day, D1, H1)")
-    p.add_argument("--step",       type=int, default=20,  help="Passo da janela deslizante")
-    p.add_argument("--embed",      type=int, default=70,  help="Dimensão do embedding de Hankel")
-    p.add_argument("--window",     type=int, default=None,
-                   help="Tamanho da janela (padrão: 5 × embed)")
-    p.add_argument("--store-mode", choices=["all", "structural_only"], default="all",
-                   help="Modos a armazenar: 'all' ou apenas estruturais acima do limiar MP")
-    p.add_argument("--overwrite",  action="store_true",
-                   help="Refaz a decomposição mesmo se já existir no Parquet")
+    p.add_argument("timeframe", help="Timeframe (ex: 1day, D1, H1, M1)")
+    p.add_argument("--step",        type=int, default=20)
+    p.add_argument("--embed",       type=int, default=70)
+    p.add_argument("--window",      type=int, default=None)
+    p.add_argument("--store-mode",  choices=["all", "structural_only"], default="all")
+    p.add_argument("--mem-budget",  type=int, default=256,
+                   help="Orcamento de RAM para buffers de chunk (MB)")
+    p.add_argument("--overwrite",   action="store_true")
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
     run(
-        symbol     = args.symbol,
-        tf_label   = args.timeframe,
-        step       = args.step,
-        embed_dim  = args.embed,
-        window     = args.window,
-        store_mode = args.store_mode,
-        overwrite  = args.overwrite,
+        symbol        = args.symbol,
+        tf_label      = args.timeframe,
+        step          = args.step,
+        embed_dim     = args.embed,
+        window        = args.window,
+        store_mode    = args.store_mode,
+        mem_budget_mb = args.mem_budget,
+        overwrite     = args.overwrite,
     )

@@ -8,17 +8,33 @@ Para cada (ativo × timeframe × step × embed):
   3. analysis_db.save()        → persiste escalares no SQLite
   4. CSV acumulativo da run    → snapshot por execução
 
+Estratégia de CPU:
+  N_WORKERS = 1  (padrão): BLAS usa todos os cores internamente via chunked eigh.
+                            Ideal para TFs com muitas janelas (H1, M5...).
+  N_WORKERS > 1:           ProcessPoolExecutor paraleliza assets. Cada worker
+                            recebe cpu_count//N_WORKERS threads BLAS.
+                            Ideal para D1 (~100 janelas/asset, chunk pequeno).
+
 Uso:
-    python decomp_run.py                       # configurações padrão
-    python decomp_run.py --no-plots            # pula geração de PDFs de figuras
-    python decomp_run.py --overwrite-analysis  # refaz análise mesmo se já estiver no DB
-    python decomp_run.py --overwrite-decomp    # refaz decomposição mesmo se parquet existir
+    python decomp_run.py                          # configurações padrão
+    python decomp_run.py --no-plots               # pula geração de PDFs
+    python decomp_run.py --workers 4              # 4 assets em paralelo
+    python decomp_run.py --overwrite-analysis     # refaz análise mesmo se no DB
+    python decomp_run.py --overwrite-decomp       # refaz decomposição mesmo se parquet existir
 """
 
+# BLAS thread saturation — deve estar antes do import do numpy
 import os
 import sys
+_N_CPU = os.cpu_count() or 1
+os.environ.setdefault('OMP_NUM_THREADS',      str(_N_CPU))
+os.environ.setdefault('OPENBLAS_NUM_THREADS', str(_N_CPU))
+os.environ.setdefault('MKL_NUM_THREADS',      str(_N_CPU))
+
 import time
 import argparse
+import gc
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
@@ -101,16 +117,17 @@ STEP        = 20
 EMBED_DIM   = 70
 # WINDOW = 5 * EMBED_DIM (padrão em decomp_pca — não precisa ser definido aqui)
 
-STEP_LIST_STEP  = [20, 30, 40, 50]
-STEP_LIST_EMBED = [70, 80, 90, 100]
+STEP_LIST_STEP  = [5,10,15,20,25,30,35,40,45,50,60,70,80,90,100]
+STEP_LIST_EMBED = [20,30,40,50,60,70,80,90,100,110,120,130,140,150,160]
 
 # Timeframes — mesmo formato que experimento_PCA_4D_3.py
-TIMEFRAME_LABELS = ['1day']
+TIMEFRAME_LABELS = ['M1']
 
 # Mapeamento para nome na partição Parquet
 _TF_TO_PARQUET = {
     '1day': 'D1', '1d': 'D1', 'D1': 'D1',
     '1hour': 'H1', '1h': 'H1', 'H1': 'H1',
+    '1week': 'W1', '1w': 'W1', 'W1': 'W1',
     '4hour': 'H4', '4h': 'H4', 'H4': 'H4',
     '1min': 'M1',  'M1': 'M1',
     '5min': 'M5',  'M5': 'M5',
@@ -121,6 +138,13 @@ _TF_TO_PARQUET = {
 # Parâmetros de análise estatística
 MAX_LAG   = 200
 TAIL_FRAC = 0.7
+
+# ── Paralelismo e memória ─────────────────────────────────────────────────────
+# N_WORKERS = 1  → sequencial; BLAS usa todos os cores via chunked eigh (padrão)
+# N_WORKERS > 1  → assets em paralelo; BLAS threads = cpu_count // N_WORKERS
+#   Use > 1 para D1 (poucas janelas/asset); mantenha 1 para H1/M5 (muitas janelas)
+N_WORKERS     = 1
+MEM_BUDGET_MB = 256   # orçamento de RAM por worker para o buffer de chunks
 
 FILE_ENCODING = 'utf-8'
 
@@ -169,6 +193,166 @@ def _log_header(title: str, level: int = 1):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Funções de nível de módulo para ProcessPoolExecutor (precisam ser picklable)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _worker_init(n_blas: int) -> None:
+    """Configura BLAS threads no processo filho antes de qualquer cálculo."""
+    for var in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+        os.environ[var] = str(n_blas)
+
+
+def _asset_task(asset: str, valid_tfs: list,
+                embed_fixo: int,
+                step_list_step: list, step_list_embed: list,
+                skip_step: bool, skip_embed: bool, skip_single: bool,
+                best_step_init: int, best_embed_init: int,
+                build_plots: bool, fig_dir: str, log_dir: str,
+                overwrite_decomp: bool, overwrite_analysis: bool,
+                max_lag: int, tail_frac: float,
+                mem_budget_mb: int) -> list[dict]:
+    """
+    Processa um asset completo (todas as fases e TFs) num processo filho.
+
+    Retorna lista de dicts escalares para o processo principal agregar no CSV/DB.
+    Não usa RunLogger (cada worker escreve no próprio arquivo de log).
+    """
+    # redireciona stdout do worker para arquivo de log por asset
+    _log_path = os.path.join(log_dir, f"{asset}_worker.txt")
+    _orig_stdout = sys.stdout
+    try:
+        sys.stdout = open(_log_path, 'a', encoding='utf-8', buffering=1)
+    except OSError:
+        sys.stdout = _orig_stdout
+
+    rows = []
+    best_step  = best_step_init
+    best_embed = best_embed_init
+
+    try:
+        for tf_label, tf_parquet in valid_tfs:
+            print(f"\n[{asset}] {tf_label} -> {tf_parquet}  |  {time.strftime('%H:%M:%S')}")
+
+            # FASE 1: varredura de STEP
+            if not skip_step:
+                for step in step_list_step:
+                    row = _run_one_return(
+                        asset, tf_label, tf_parquet, step, embed_fixo,
+                        build_plots, fig_dir, overwrite_decomp, overwrite_analysis,
+                        max_lag, tail_frac, mem_budget_mb,
+                    )
+                    if row:
+                        rows.append(row)
+                # melhor step pelo MP_L2 dos resultados já computados
+                if rows:
+                    df_step = pd.DataFrame(
+                        [r for r in rows if r.get('timeframe') == tf_parquet
+                         and r.get('embed_dim') == embed_fixo]
+                    )
+                    if not df_step.empty and 'MP_L2_relative_pct' in df_step:
+                        best_step = int(df_step.loc[
+                            df_step['MP_L2_relative_pct'].idxmin(), 'step'
+                        ])
+                print(f"  BEST_STEP[{asset}] = {best_step}")
+
+            # FASE 2: varredura de EMBED
+            if not skip_embed:
+                for embed in step_list_embed:
+                    row = _run_one_return(
+                        asset, tf_label, tf_parquet, best_step, embed,
+                        build_plots, fig_dir, overwrite_decomp, overwrite_analysis,
+                        max_lag, tail_frac, mem_budget_mb,
+                    )
+                    if row:
+                        rows.append(row)
+                if rows:
+                    df_embed = pd.DataFrame(
+                        [r for r in rows if r.get('timeframe') == tf_parquet
+                         and r.get('step') == best_step]
+                    )
+                    if not df_embed.empty and 'MP_L2_relative_pct' in df_embed:
+                        best_embed = int(df_embed.loc[
+                            df_embed['MP_L2_relative_pct'].idxmin(), 'embed_dim'
+                        ])
+                print(f"  BEST_EMBED[{asset}] = {best_embed}")
+
+            # FASE 3: single params ótimos
+            if not skip_single:
+                row = _run_one_return(
+                    asset, tf_label, tf_parquet, best_step, best_embed,
+                    build_plots, fig_dir, overwrite_decomp, overwrite_analysis,
+                    max_lag, tail_frac, mem_budget_mb,
+                )
+                if row:
+                    rows.append(row)
+
+    finally:
+        if sys.stdout is not _orig_stdout:
+            sys.stdout.close()
+            sys.stdout = _orig_stdout
+
+    return rows
+
+
+def _run_one_return(symbol: str, tf_label: str, tf_parquet: str,
+                    step: int, embed: int,
+                    build_plots: bool, fig_dir: str,
+                    overwrite_decomp: bool, overwrite_analysis: bool,
+                    max_lag: int, tail_frac: float,
+                    mem_budget_mb: int) -> dict | None:
+    """
+    Versão de _run_one() que retorna o dict escalar em vez de mutacionr all_rows.
+    Usada tanto no path sequencial quanto no path paralelo.
+    """
+    tag = f"{symbol}/{tf_parquet}/step={step}/embed={embed}"
+
+    # 1. Decomposição
+    try:
+        decomp_pca.run(
+            symbol=symbol, tf_label=tf_label,
+            step=step, embed_dim=embed,
+            mem_budget_mb=mem_budget_mb,
+            overwrite=overwrite_decomp,
+        )
+    except Exception as exc:
+        print(f"  [ERRO decomp] {tag}: {exc}")
+        return None
+
+    # 2. Análise — skip se já no DB
+    if not overwrite_analysis and analysis_db.exists(symbol, tf_parquet, step, embed):
+        print(f"  [skip analise] {tag} — ja existe no DB")
+        df_row = analysis_db.load(symbol, tf_parquet)
+        match  = df_row[(df_row.step == step) & (df_row.embed_dim == embed)]
+        return match.iloc[0].to_dict() if not match.empty else None
+
+    try:
+        res = decomp_analysis.analyze(
+            symbol=symbol, timeframe=tf_parquet,
+            step=step, embed_dim=embed,
+            max_lag=max_lag, tail_frac=tail_frac,
+        )
+    except Exception as exc:
+        print(f"  [ERRO analise] {tag}: {exc}")
+        return None
+
+    # 3. Figuras
+    if build_plots:
+        pdf_path = os.path.join(fig_dir, f"{symbol}_{tf_parquet}_s{step}_e{embed}.pdf")
+        try:
+            with _PdfPages(pdf_path) as pdf:
+                decomp_analysis.plot_results(res, pdf)
+        except Exception as exc:
+            print(f"  [AVISO plots] {tag}: {exc}")
+
+    # salva no DB (idempotente — INSERT OR REPLACE)
+    analysis_db.save(res)
+
+    print(f"  [ok] {tag} | beta_struct={res['beta_struct']:.3f} "
+          f"R_FDT={res['R_FDT']:.3f} alpha={res['alpha']:.3f}")
+    return decomp_analysis.to_scalar_row(res)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Verificação de dados disponíveis
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -204,75 +388,18 @@ def _save_csv(rows: list, path: str, retries: int = 5):
 
 def _run_one(symbol: str, tf_label: str, tf_parquet: str,
              step: int, embed: int,
-             build_plots: bool,
-             fig_dir: str,
-             overwrite_decomp: bool,
-             overwrite_analysis: bool,
-             all_rows: list,
-             csv_path: str) -> dict | None:
-    """
-    Executa decomposição + análise para uma combinação e salva no DB.
-    Retorna o dict de resultados escalares, ou None em caso de erro.
-    """
-    tag = f"{symbol}/{tf_parquet}/step={step}/embed={embed}"
-
-    # ── 1. Decomposição (skip se parquet já existir) ───────────────────────
-    try:
-        decomp_pca.run(
-            symbol     = symbol,
-            tf_label   = tf_label,
-            step       = step,
-            embed_dim  = embed,
-            overwrite  = overwrite_decomp,
-        )
-    except Exception as exc:
-        print(f"  [ERRO decomp] {tag}: {exc}")
-        return None
-
-    # ── 2. Análise (skip se já no DB e não forçar reescrita) ──────────────
-    if not overwrite_analysis and analysis_db.exists(symbol, tf_parquet, step, embed):
-        print(f"  [skip análise] {tag} — já existe no DB")
-        # recupera do DB para incluir no CSV da run
-        df_row = analysis_db.load(symbol, tf_parquet)
-        match  = df_row[(df_row.step == step) & (df_row.embed_dim == embed)]
-        if not match.empty:
-            row = match.iloc[0].to_dict()
-            all_rows.append(row)
-            _save_csv(all_rows, csv_path)
-        return None
-
-    try:
-        res = decomp_analysis.analyze(
-            symbol    = symbol,
-            timeframe = tf_parquet,
-            step      = step,
-            embed_dim = embed,
-            max_lag   = MAX_LAG,
-            tail_frac = TAIL_FRAC,
-        )
-    except Exception as exc:
-        print(f"  [ERRO análise] {tag}: {exc}")
-        return None
-
-    # ── 3. Figuras (opcional) ─────────────────────────────────────────────
-    if build_plots:
-        pdf_path = os.path.join(fig_dir, f"{symbol}_{tf_parquet}_s{step}_e{embed}.pdf")
-        try:
-            with _PdfPages(pdf_path) as pdf:
-                decomp_analysis.plot_results(res, pdf)
-        except Exception as exc:
-            print(f"  [AVISO plots] {tag}: {exc}")
-
-    # ── 4. Persistência ───────────────────────────────────────────────────
-    analysis_db.save(res)
-
-    row = decomp_analysis.to_scalar_row(res)
-    all_rows.append(row)
-    _save_csv(all_rows, csv_path)
-
-    print(f"  [ok] {tag} | beta_struct={res['beta_struct']:.3f} "
-          f"R_FDT={res['R_FDT']:.3f} alpha={res['alpha']:.3f}")
-    return res
+             build_plots: bool, fig_dir: str,
+             overwrite_decomp: bool, overwrite_analysis: bool,
+             all_rows: list, csv_path: str) -> None:
+    """Wrapper sequencial: chama _run_one_return e agrega resultado no CSV."""
+    row = _run_one_return(
+        symbol, tf_label, tf_parquet, step, embed,
+        build_plots, fig_dir, overwrite_decomp, overwrite_analysis,
+        MAX_LAG, TAIL_FRAC, MEM_BUDGET_MB,
+    )
+    if row is not None:
+        all_rows.append(row)
+        _save_csv(all_rows, csv_path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,16 +408,20 @@ def _run_one(symbol: str, tf_label: str, tf_parquet: str,
 
 def run_pipeline(build_plots: bool = True,
                  overwrite_decomp: bool = False,
-                 overwrite_analysis: bool = False) -> None:
+                 overwrite_analysis: bool = False,
+                 n_workers: int = None) -> None:
+
+    n_workers = n_workers if n_workers is not None else N_WORKERS
+    n_blas    = max(1, _N_CPU // n_workers)
 
     # ── estrutura de diretórios da run ────────────────────────────────────
-    _run_ts      = time.strftime('%Y%m%d_%H%M%S')
-    _src_dir     = Path(__file__).parent
-    _run_dir     = _src_dir / f"run_{_run_ts}"
-    _log_dir     = _run_dir / "logs"
-    _fig_dir     = _run_dir / "figures"
-    _log_insuf   = _run_dir / "insufficient_data_log.txt"
-    _csv_path    = str(_run_dir / f"results_{_run_ts}.csv")
+    _run_ts    = time.strftime('%Y%m%d_%H%M%S')
+    _src_dir   = Path(__file__).parent
+    _run_dir   = _src_dir / f"run_{_run_ts}"
+    _log_dir   = _run_dir / "logs"
+    _fig_dir   = _run_dir / "figures"
+    _log_insuf = _run_dir / "insufficient_data_log.txt"
+    _csv_path  = str(_run_dir / f"results_{_run_ts}.csv")
 
     _run_dir.mkdir(parents=True, exist_ok=True)
     _log_dir.mkdir(exist_ok=True)
@@ -298,107 +429,138 @@ def run_pipeline(build_plots: bool = True,
 
     analysis_db.init()
 
-    _run_logger = RunLogger(str(_log_dir / "_run_geral.txt"))
-    sys.stdout  = _run_logger
-
     _all_rows: list[dict] = []
 
-    print(f"Inicio da execucao  |  {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Ativos : {len(ASSET_LIST)}")
-    print(f"TFs    : {TIMEFRAME_LABELS}")
-    print(f"Steps  : {STEP_LIST_STEP}  (SKIP={SKIP_STEP})")
-    print(f"Embeds : {STEP_LIST_EMBED}  (SKIP={SKIP_EMBED})")
-    print(f"DB     : {analysis_db.DB_PATH}")
-    print(f"Saida  : {_run_dir}/")
+    # banner inicial (sempre no terminal original, antes de redirecionar stdout)
+    _banner = (
+        f"\nInicio  |  {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Ativos  : {len(ASSET_LIST)}\n"
+        f"TFs     : {TIMEFRAME_LABELS}\n"
+        f"Steps   : {STEP_LIST_STEP}  (SKIP={SKIP_STEP})\n"
+        f"Embeds  : {STEP_LIST_EMBED}  (SKIP={SKIP_EMBED})\n"
+        f"Workers : {n_workers}  |  BLAS threads/worker: {n_blas}  |  CPUs: {_N_CPU}\n"
+        f"Memoria : {MEM_BUDGET_MB} MB/worker para buffer de chunks\n"
+        f"DB      : {analysis_db.DB_PATH}\n"
+        f"Saida   : {_run_dir}/\n"
+    )
+    print(_banner)
 
-    # ── loop principal ────────────────────────────────────────────────────
-    for ASSET in ASSET_LIST:
-        _log_header(ASSET, level=1)
-        _run_logger.switch_file(str(_log_dir / f"{ASSET}_geral.txt"))
-        _log_header(ASSET, level=1)
-
-        # verifica disponibilidade de dados para cada timeframe
-        valid_tfs: list[tuple[str, str]] = []
-        for tf_label in TIMEFRAME_LABELS:
-            tf_parquet = _TF_TO_PARQUET.get(tf_label, tf_label)
-            if _data_available(ASSET, tf_parquet):
-                valid_tfs.append((tf_label, tf_parquet))
+    # ── pré-filtragem: quais assets têm dados disponíveis ─────────────────
+    asset_tfs: list[tuple[str, list]] = []   # [(asset, [(tf_label, tf_parquet), ...]), ...]
+    with open(_log_insuf, 'a', encoding=FILE_ENCODING) as _lf:
+        for asset in ASSET_LIST:
+            valid_tfs = []
+            for tf_label in TIMEFRAME_LABELS:
+                tf_parquet = _TF_TO_PARQUET.get(tf_label, tf_label)
+                if _data_available(asset, tf_parquet):
+                    valid_tfs.append((tf_label, tf_parquet))
+                else:
+                    _lf.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} | "
+                              f"asset={asset} | tf={tf_label} | dados nao encontrados\n")
+            if valid_tfs:
+                asset_tfs.append((asset, valid_tfs))
             else:
-                msg = f"{time.strftime('%Y-%m-%d %H:%M:%S')} | asset={ASSET} | tf={tf_label} | dados nao encontrados\n"
-                print(f"  [AUSENTE] {ASSET} {tf_label} — ignorado")
-                with open(_log_insuf, 'a', encoding=FILE_ENCODING) as f:
-                    f.write(msg)
+                print(f"  [AUSENTE] {asset} — nenhum dado disponivel, ignorado")
 
-        if not valid_tfs:
-            print(f"  [AVISO] Nenhum dado disponivel para {ASSET} — ativo ignorado")
-            continue
+    print(f"{len(asset_tfs)}/{len(ASSET_LIST)} ativos com dados disponiveis\n")
 
-        for tf_label, tf_parquet in valid_tfs:
-            _run_logger.switch_file(str(_log_dir / f"{ASSET}_{tf_parquet}.txt"))
-            _log_header(ASSET, level=1)
-            _log_header(f"Timeframe: {tf_label} -> {tf_parquet}", level=3)
+    # ── PATH SEQUENCIAL (N_WORKERS == 1) ─────────────────────────────────
+    if n_workers == 1:
+        _run_logger = RunLogger(str(_log_dir / "_run_geral.txt"))
+        sys.stdout  = _run_logger
+        print(_banner)
 
-            # ── FASE 1: varredura de STEP (embed fixo) ────────────────────
-            if not SKIP_STEP:
-                _log_header("FASE 1: varredura STEP", level=2)
-                embed_fixo = EMBED_DIM
-                for step in STEP_LIST_STEP:
-                    _log_header(f"step={step} embed={embed_fixo}", level=4)
-                    _run_one(
-                        symbol=ASSET, tf_label=tf_label, tf_parquet=tf_parquet,
-                        step=step, embed=embed_fixo,
-                        build_plots=build_plots, fig_dir=str(_fig_dir),
-                        overwrite_decomp=overwrite_decomp,
-                        overwrite_analysis=overwrite_analysis,
-                        all_rows=_all_rows, csv_path=_csv_path,
-                    )
+        for asset, valid_tfs in asset_tfs:
+            _log_header(asset, level=1)
+            _run_logger.switch_file(str(_log_dir / f"{asset}.txt"))
+            _log_header(asset, level=1)
 
-                # determina BEST_STEP a partir do DB
-                best = analysis_db.best_step(ASSET, tf_parquet, criterion='mp_l2')
-                if best is not None:
-                    BEST_STEP[ASSET] = best
-                    print(f"  BEST_STEP[{ASSET}] = {best} (criterio: MP_L2 minimo)")
+            for tf_label, tf_parquet in valid_tfs:
+                _log_header(f"Timeframe: {tf_label} -> {tf_parquet}", level=3)
 
-            # ── FASE 2: varredura de EMBED (step ótimo fixo) ──────────────
-            if not SKIP_EMBED:
-                _log_header("FASE 2: varredura EMBED", level=2)
-                step_fixo = BEST_STEP[ASSET]
-                for embed in STEP_LIST_EMBED:
-                    _log_header(f"step={step_fixo} embed={embed}", level=4)
-                    _run_one(
-                        symbol=ASSET, tf_label=tf_label, tf_parquet=tf_parquet,
-                        step=step_fixo, embed=embed,
-                        build_plots=build_plots, fig_dir=str(_fig_dir),
-                        overwrite_decomp=overwrite_decomp,
-                        overwrite_analysis=overwrite_analysis,
-                        all_rows=_all_rows, csv_path=_csv_path,
-                    )
+                if not SKIP_STEP:
+                    _log_header("FASE 1: varredura STEP", level=2)
+                    for step in STEP_LIST_STEP:
+                        _log_header(f"step={step} embed={EMBED_DIM}", level=4)
+                        _run_one(asset, tf_label, tf_parquet, step, EMBED_DIM,
+                                 build_plots, str(_fig_dir),
+                                 overwrite_decomp, overwrite_analysis,
+                                 _all_rows, _csv_path)
+                    best = analysis_db.best_step(asset, tf_parquet)
+                    if best:
+                        BEST_STEP[asset] = best
+                        print(f"  BEST_STEP[{asset}] = {best}")
 
-                # determina BEST_EMBED a partir do DB
-                best = analysis_db.best_embed(ASSET, tf_parquet, criterion='mp_l2')
-                if best is not None:
-                    BEST_EMBED[ASSET] = best
-                    print(f"  BEST_EMBED[{ASSET}] = {best} (criterio: MP_L2 minimo)")
+                if not SKIP_EMBED:
+                    _log_header("FASE 2: varredura EMBED", level=2)
+                    for embed in STEP_LIST_EMBED:
+                        _log_header(f"step={BEST_STEP[asset]} embed={embed}", level=4)
+                        _run_one(asset, tf_label, tf_parquet, BEST_STEP[asset], embed,
+                                 build_plots, str(_fig_dir),
+                                 overwrite_decomp, overwrite_analysis,
+                                 _all_rows, _csv_path)
+                    best = analysis_db.best_embed(asset, tf_parquet)
+                    if best:
+                        BEST_EMBED[asset] = best
+                        print(f"  BEST_EMBED[{asset}] = {best}")
 
-            # ── FASE 3: análise com parâmetros ótimos (single) ────────────
-            if not SKIP_SINGLE:
-                _log_header("FASE 3: single (params otimos)", level=2)
-                step_opt  = BEST_STEP[ASSET]
-                embed_opt = BEST_EMBED[ASSET]
-                _log_header(f"step={step_opt} embed={embed_opt}", level=4)
-                _run_one(
-                    symbol=ASSET, tf_label=tf_label, tf_parquet=tf_parquet,
-                    step=step_opt, embed=embed_opt,
-                    build_plots=build_plots, fig_dir=str(_fig_dir),
-                    overwrite_decomp=overwrite_decomp,
-                    overwrite_analysis=overwrite_analysis,
-                    all_rows=_all_rows, csv_path=_csv_path,
-                )
+                if not SKIP_SINGLE:
+                    _log_header("FASE 3: single (params otimos)", level=2)
+                    _run_one(asset, tf_label, tf_parquet,
+                             BEST_STEP[asset], BEST_EMBED[asset],
+                             build_plots, str(_fig_dir),
+                             overwrite_decomp, overwrite_analysis,
+                             _all_rows, _csv_path)
 
-    _run_logger.close()
-    print(f"\nConcluido | {len(_all_rows)} combinacoes processadas")
-    print(f"DB     : {analysis_db.DB_PATH}")
-    print(f"CSV    : {_csv_path}")
+        _run_logger.close()
+
+    # ── PATH PARALELO (N_WORKERS > 1) ────────────────────────────────────
+    else:
+        # Cada worker: processa um asset completo (todas TFs + todas fases)
+        # BLAS threads reduzidas para não sobre-subscrever os cores
+        n_done = 0
+        n_total_assets = len(asset_tfs)
+
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_worker_init,
+            initargs=(n_blas,),
+        ) as pool:
+            futures = {
+                pool.submit(
+                    _asset_task,
+                    asset, valid_tfs,
+                    EMBED_DIM,
+                    STEP_LIST_STEP, STEP_LIST_EMBED,
+                    SKIP_STEP, SKIP_EMBED, SKIP_SINGLE,
+                    BEST_STEP[asset], BEST_EMBED[asset],
+                    build_plots, str(_fig_dir), str(_log_dir),
+                    overwrite_decomp, overwrite_analysis,
+                    MAX_LAG, TAIL_FRAC, MEM_BUDGET_MB,
+                ): asset
+                for asset, valid_tfs in asset_tfs
+            }
+
+            for future in as_completed(futures):
+                asset = futures[future]
+                n_done += 1
+                try:
+                    rows = future.result()
+                    _all_rows.extend(rows)
+                    if _all_rows:
+                        _save_csv(_all_rows, _csv_path)
+                    pct = 100 * n_done / n_total_assets
+                    bar = '#' * int(pct / 5) + '.' * (20 - int(pct / 5))
+                    print(f"[{bar}] {pct:5.1f}%  {asset} concluido "
+                          f"({n_done}/{n_total_assets})  +{len(rows)} resultados",
+                          flush=True)
+                except Exception as exc:
+                    print(f"  [ERRO worker] {asset}: {exc}", flush=True)
+
+    print(f"\nConcluido | {len(_all_rows)} combinacoes | "
+          f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"DB   : {analysis_db.DB_PATH}")
+    print(f"CSV  : {_csv_path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -416,6 +578,9 @@ def _parse_args():
                    help="Refaz decomposicao mesmo se parquet existir")
     p.add_argument("--overwrite-analysis", action="store_true",
                    help="Refaz analise mesmo se resultado estiver no DB")
+    p.add_argument("--workers",            type=int, default=N_WORKERS,
+                   help="Numero de assets processados em paralelo "
+                        "(1=sequencial, >1=ProcessPoolExecutor com BLAS reduzido)")
     return p.parse_args()
 
 
@@ -425,4 +590,5 @@ if __name__ == "__main__":
         build_plots        = not args.no_plots,
         overwrite_decomp   = args.overwrite_decomp,
         overwrite_analysis = args.overwrite_analysis,
+        n_workers          = args.workers,
     )
