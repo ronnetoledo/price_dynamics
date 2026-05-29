@@ -50,6 +50,7 @@ src_newest/cache/
 src_newest/*.csv
 src_newest/*.pdf
 src_newest/*.png
+src_newest/*.gif
 
 # Figuras geradas (artefatos regeneráveis)
 src_fig*.pdf

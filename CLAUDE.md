@@ -8,6 +8,8 @@ Pesquisa em física computacional aplicada a mercados financeiros. O objetivo é
 - **MSD (Mean Squared Displacement)**: mede a difusão do processo X_t = cumsum(K_t − ⟨K⟩), onde K_t são as matrizes espectrais. O expoente β caracteriza o regime de difusão (normal, sub, super).
 - **Otimização de bins**: método de Shimazaki-Shinomoto para binagem ótima de histogramas.
 - **Ângulos de subespaço**: `scipy.linalg.subspace_angles` para medir rotação entre subespaços espectrais consecutivos.
+- **Parâmetros `embed`/`window`/`step`**: explicação conceitual (embedding de Hankel, amostra local, passada temporal) em `docs/step_embed_window.md`.
+- **Direção vs. espectro**: por que autovalores são cegos à direção (forma quadrática, invariante a r→−r) e como usar o espectro como classificador de regime — `docs/direcao_e_espectro.md`.
 
 ## Arquitetura de dados
 - **Dados históricos**: arquivos Parquet particionados em `data_parquet/source=<fonte>/symbol=<ATIVO>/timeframe=<TF>/year=<ANO>/data.parquet`
