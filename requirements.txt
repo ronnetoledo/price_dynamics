@@ -1,5 +1,8 @@
 streamlit
+streamlit-lightweight-charts
 pandas
+numpy
 pyarrow
 plotly
+matplotlib
 fastparquet
