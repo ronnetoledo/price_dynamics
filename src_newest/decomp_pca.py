@@ -56,6 +56,11 @@ import decomp_io
 
 _HERE     = Path(__file__).parent
 DATA_ROOT = _HERE.parent / "data_parquet"
+ADJ_ROOT  = _HERE.parent / "data_parquet_adj"   # split-adjusted (só símbolos com split)
+
+# Default global: usar preços split-adjusted. Scripts que precisam do RAW
+# (ex.: detector de splits, vol_estimators) passam adjusted=False explicitamente.
+USE_ADJUSTED = True
 
 _CSV_DIRS = {
     "alpaca":     _HERE.parent / "alpaca" / "SPY500_DATA",
@@ -76,13 +81,18 @@ _TF_TO_PARQUET = {
 # Carregamento de dados OHLCV
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _load_parquet(symbol: str, tf_parquet: str) -> pd.DataFrame:
-    for source in ("alpaca", "metatrader"):
-        base  = DATA_ROOT / f"source={source}" / f"symbol={symbol}" / f"timeframe={tf_parquet}"
-        parts = sorted(base.glob("year=*/data.parquet")) if base.exists() else []
-        if parts:
-            df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
-            return df.sort_values("ts").reset_index(drop=True)
+def _load_parquet(symbol: str, tf_parquet: str,
+                  adjusted: bool = USE_ADJUSTED) -> pd.DataFrame:
+    # Quando adjusted, tenta o tree ajustado primeiro e cai no raw para os
+    # símbolos sem split (que não têm partição em data_parquet_adj/).
+    roots = (ADJ_ROOT, DATA_ROOT) if adjusted else (DATA_ROOT,)
+    for root in roots:
+        for source in ("alpaca", "metatrader"):
+            base  = root / f"source={source}" / f"symbol={symbol}" / f"timeframe={tf_parquet}"
+            parts = sorted(base.glob("year=*/data.parquet")) if base.exists() else []
+            if parts:
+                df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+                return df.sort_values("ts").reset_index(drop=True)
     raise FileNotFoundError(
         f"Parquet nao encontrado: symbol={symbol} timeframe={tf_parquet} em {DATA_ROOT}"
     )
@@ -106,11 +116,16 @@ def _load_csv(symbol: str, tf_label: str) -> pd.DataFrame:
     )
 
 
-def load_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame:
-    """Carrega OHLCV do Parquet (prioritario) com fallback para CSV."""
+def load_ohlcv(symbol: str, tf_label: str,
+               adjusted: bool = USE_ADJUSTED) -> pd.DataFrame:
+    """Carrega OHLCV do Parquet (prioritario) com fallback para CSV.
+
+    adjusted=True (default) usa precos split-adjusted de data_parquet_adj/,
+    caindo no raw para simbolos sem split. Passe adjusted=False para o raw.
+    """
     tf_parquet = _TF_TO_PARQUET.get(tf_label, tf_label)
     try:
-        return _load_parquet(symbol, tf_parquet)
+        return _load_parquet(symbol, tf_parquet, adjusted=adjusted)
     except FileNotFoundError:
         return _load_csv(symbol, tf_label)
 
