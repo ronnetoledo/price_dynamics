@@ -27,6 +27,10 @@ except Exception:
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import pathlib
+_ROOT = pathlib.Path(__file__).resolve().parent.parent          # src_newest/ (núcleo)
+sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "har_vol"))                      # reaproveita o HAR-vol
 import har_vol_forecast as HV
 
 
@@ -83,7 +87,7 @@ def r2(y, yh):
     return 1 - np.sum((y - yh) ** 2) / np.sum((y - y.mean()) ** 2)
 
 
-def main(symbol, tf, step, embed, plot_days):
+def main(symbol, tf, step, embed, plot_days, band_c=0.0):
     daily, d = HV.build_daily(symbol, tf, step, embed)
     n = len(daily)
     C = daily["close"].to_numpy()
@@ -144,25 +148,29 @@ def main(symbol, tf, step, embed, plot_days):
     print(f"      banda calibrada c={c_star:.2f}: cobertura OOS (2ª metade) = {cov_te:.2%}")
 
     # ── (c) gráfico ───────────────────────────────────────────────────────────
+    c_plot = band_c if band_c and band_c > 0 else c_star    # c=1 => previsão pontual
+    cov_plot = joint_cov(te_t, c_plot)
+    tag = "pontual (c=1)" if abs(c_plot - 1.0) < 1e-6 else f"banda c={c_plot:.2f}"
     sl = slice(max(0, n - 1 - plot_days), n - 1)           # dias da previsão t
     tt = np.arange(sl.start, sl.stop)
     dd = dates[tt + 1]                                      # dia previsto t+1
     fig, ax = plt.subplots(figsize=(12, 5))
-    # barras H/L previstas (banda calibrada)
-    Hb = C[tt] * np.exp(c_star * uh[tt]); Lb = C[tt] * np.exp(-c_star * dh[tt])
+    Hb = C[tt] * np.exp(c_plot * uh[tt]); Lb = C[tt] * np.exp(-c_plot * dh[tt])
     ax.vlines(dd, Lb, Hb, color="#1f77b4", alpha=0.45, lw=3,
-              label=f"banda H/L prevista (c={c_star:.2f}, {cov_te:.0%} cob.)")
+              label=f"H/L previsto {tag}, {cov_plot:.0%} cob.")
     ax.plot(dd, Hi[tt + 1], "_", color="#d62728", ms=7, label="H realizado")
     ax.plot(dd, Lo[tt + 1], "_", color="#2ca02c", ms=7, label="L realizado")
     ax.plot(dd, C[tt + 1], "-", color="black", lw=1.2, label="close")
-    ax.set_title(f"{symbol} {tf} — close e banda H/L prevista (σ̂ HAR-full, OOS)")
+    ax.set_title(f"{symbol} {tf} — close e H/L previsto (σ̂ HAR-full, OOS) | "
+                 f"range R²={r2(rng_tgt, rng_full):.2f}")
     ax.set_ylabel("preço"); ax.legend(fontsize=9, loc="best")
     ax.grid(True, ls=":", alpha=0.4)
     fig.autofmt_xdate()
     fig.tight_layout()
-    out = f"hl_forecast_{symbol}_{tf}.png"
+    suf = "_pontual" if abs(c_plot - 1.0) < 1e-6 else f"_c{c_plot:.2f}"
+    out = f"hl_forecast_{symbol}_{tf}{suf}.png"
     fig.savefig(out, dpi=140)
-    print(f"\n  gráfico: {out}")
+    print(f"\n  gráfico (c={c_plot:.2f}, cobertura {cov_plot:.0%}): {out}")
 
 
 if __name__ == "__main__":
@@ -171,5 +179,7 @@ if __name__ == "__main__":
     ap.add_argument("--step", type=int, default=20)
     ap.add_argument("--embed", type=int, default=70)
     ap.add_argument("--plot-days", type=int, default=120)
+    ap.add_argument("--band-c", type=float, default=0.0,
+                    help="multiplicador da semi-amplitude (1=pontual; 0=calibrado p/ 80pct)")
     a = ap.parse_args()
-    main(a.symbol, a.timeframe, a.step, a.embed, a.plot_days)
+    main(a.symbol, a.timeframe, a.step, a.embed, a.plot_days, a.band_c)

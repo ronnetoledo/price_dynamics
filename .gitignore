@@ -52,6 +52,14 @@ src_newest/*.pdf
 src_newest/*.png
 src_newest/*.gif
 
+# Artefatos regeneráveis nas subpastas de implementação (png/csv/saídas de run)
+src_newest/**/*.png
+src_newest/**/*.csv
+src_newest/**/multi_har_out*.txt
+
+# Tree de preços ajustado por splits (regenerável via apply_splits.py)
+data_parquet_adj/
+
 # Figuras geradas (artefatos regeneráveis)
 src_fig*.pdf
 src_fig*.png
